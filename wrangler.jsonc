@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "worklog",
+  "main": "./src/server/index.ts",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    // /api/* はアセットルータより先に Worker へ渡す。これがないと、ブラウザの
+    // ダウンロード要求(Sec-Fetch-Dest: document)が SPA フォールバックに横取りされ、
+    // xlsx の代わりに index.html が返る。
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "worklog-db",
+      // ローカル(miniflare)ではこの文字列から派生した sqlite ファイルが使われるだけで、
+      // 値自体に意味はない(変更するとローカルDBが別ファイルに切り替わる)。
+      // デプロイ前に `wrangler d1 create worklog-db` で発行される実IDへ差し替えること。
+      "database_id": "local-worklog-db"
+    }
+  ]
+  // 擬似ログイン用の DEV_AUTH_EMAIL / DEV_AUTH_NAME は .dev.vars に置く。
+  // ここ(vars)に書くと wrangler deploy でそのまま本番に載り、認証が素通しになるため。
+}

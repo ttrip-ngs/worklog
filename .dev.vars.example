@@ -1,0 +1,4 @@
+# cp .dev.vars.example .dev.vars して使う。ローカルの擬似ログイン用。
+# 本番(wrangler deploy)では設定しないこと。未設定なら API は 401 を返す。
+DEV_AUTH_EMAIL=you@example.com
+DEV_AUTH_NAME=開発ユーザー
