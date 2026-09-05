@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Entry, Suggestions } from "../../shared/types";
 import { formatMin, parseTimeInput, formatMinPadded, weekdayOf, daysOfMonth } from "../../shared/time";
 import type { EntryPayload } from "../api";
+import { isEnterKey } from "../ime";
 
 function lastDayOfMonth(month: string): string {
   const days = daysOfMonth(month);
@@ -85,7 +86,7 @@ export function QuickAdd({
   };
 
   const onEnter = (ev: React.KeyboardEvent) => {
-    if (ev.key === "Enter") void submit();
+    if (isEnterKey(ev)) void submit();
   };
 
   /** blur 時に "9" -> "09:00" のように表示を正規化する。 */
