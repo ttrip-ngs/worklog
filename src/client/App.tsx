@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ClientWithContracts, Entry, MonthResponse } from "../shared/types";
 import { formatDuration, shiftMonth, sumDuration } from "../shared/time";
 import { api, type ClientInput, type ContractInput, type EntryPayload } from "./api";
@@ -29,6 +29,18 @@ export default function App() {
   const [managing, setManaging] = useState(false);
   const [inputDate, setInputDate] = useState(`${month}-01`);
   const [savedAt, setSavedAt] = useState("");
+  const quickAddRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * カレンダーで日を選んだときの遷移。モバイルでは入力欄が画面上部・カレンダーが
+   * 最下部にあり、選んだあと自力でスクロールし直すことになるため入力欄まで送る。
+   */
+  const selectDate = useCallback((d: string) => {
+    setInputDate(d);
+    if (window.matchMedia("(max-width: 720px)").matches) {
+      quickAddRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
 
   // 帳票ヘッダ(提出日・特記事項)のローカル編集状態
   const [submittedOn, setSubmittedOn] = useState("");
@@ -112,6 +124,7 @@ export default function App() {
   );
 
   const totalMin = useMemo(() => (data ? sumDuration(data.entries) : 0), [data]);
+  const reportHref = contractId !== null ? api.reportUrl(contractId, month) : "#";
   const lastEntry: Entry | undefined = data?.entries[data.entries.length - 1];
 
   const saveMeta = async () => {
@@ -204,50 +217,48 @@ export default function App() {
                 </optgroup>
               ))}
           </select>
-          <button type="button" onClick={() => setManaging(true)}>
+          <button type="button" className="manage-button" onClick={() => setManaging(true)}>
             取引先・委託件名の管理
           </button>
           <span className="spacer" />
-          <button type="button" onClick={() => setMonth(shiftMonth(month, -1))}>
-            ◀
-          </button>
-          <input
-            className="month-field"
-            type="month"
-            value={month}
-            onChange={(e) => e.target.value && setMonth(e.target.value)}
-          />
-          <button type="button" onClick={() => setMonth(shiftMonth(month, 1))}>
-            ▶
-          </button>
+          <div className="month-nav">
+            <button type="button" aria-label="前の月" onClick={() => setMonth(shiftMonth(month, -1))}>
+              ◀
+            </button>
+            <input
+              className="month-field"
+              type="month"
+              value={month}
+              onChange={(e) => e.target.value && setMonth(e.target.value)}
+            />
+            <button type="button" aria-label="次の月" onClick={() => setMonth(shiftMonth(month, 1))}>
+              ▶
+            </button>
+          </div>
         </div>
       </header>
 
       {error && <p className="error">{error}</p>}
 
       <section className="summary">
-        <div className="summary-item">
+        <div className="summary-item is-client">
           <span className="summary-label">取引先</span>
           <strong>{data?.client.name ?? "-"}</strong>
         </div>
-        <div className="summary-item">
+        <div className="summary-item is-contract">
           <span className="summary-label">委託件名</span>
           <strong>{data?.contract.project_name ?? "-"}</strong>
         </div>
-        <div className="summary-item">
+        <div className="summary-item is-count">
           <span className="summary-label">明細件数</span>
           <strong>{data?.entries.length ?? 0} 件</strong>
         </div>
-        <div className="summary-item">
+        <div className="summary-item is-total">
           <span className="summary-label">稼働時間計</span>
           <strong className="total">{formatDuration(totalMin)}</strong>
           <span className="sub">({(totalMin / 60).toFixed(2)} h)</span>
         </div>
-        <a
-          className="button primary"
-          href={contractId !== null ? api.reportUrl(contractId, month) : "#"}
-          download
-        >
+        <a className="button primary summary-report" href={reportHref} download>
           Excel帳票をダウンロード
         </a>
       </section>
@@ -274,6 +285,7 @@ export default function App() {
 
           {contractId !== null && data && (
             <QuickAdd
+              ref={quickAddRef}
               month={month}
               date={inputDate}
               onDateChange={setInputDate}
@@ -293,7 +305,7 @@ export default function App() {
             month={month}
             entries={data?.entries ?? []}
             selected={inputDate}
-            onSelect={setInputDate}
+            onSelect={selectDate}
           />
 
           <div className="report-meta">
@@ -318,6 +330,10 @@ export default function App() {
               />
             </label>
             {savedAt && <p className="hint">最終保存 {savedAt}</p>}
+            {/* モバイルではサマリ側を隠し、こちらを出す(styles.css) */}
+            <a className="button primary meta-report" href={reportHref} download>
+              Excel帳票をダウンロード
+            </a>
           </div>
         </aside>
       </div>

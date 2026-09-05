@@ -19,6 +19,8 @@ body {
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
   font-size: 14px;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: rgba(31, 111, 235, .12);
 }
 
 .app { max-width: 1360px; margin: 0 auto; padding: 16px 20px 60px; }
@@ -32,17 +34,30 @@ h2 { font-size: 14px; margin: 0 0 8px; }
 }
 .header-controls { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; }
 .header-controls .spacer { flex: 1; }
+/* デスクトップでは header-controls に直接並んでいたのと同じ見た目。
+   モバイルでのみ「◀ 月 ▶」を1行に固めるためにまとめている。 */
+.month-nav { display: flex; align-items: center; gap: 8px; }
 
 button, .button {
   font: inherit; padding: 5px 11px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--surface); color: var(--text); cursor: pointer; text-decoration: none;
   display: inline-block; line-height: 1.5;
 }
-button:hover, .button:hover { background: #eef1f5; }
 button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.primary:hover, .button.primary:hover { background: #1a5fd0; }
 button.danger { color: var(--danger); border-color: #e5b4b4; }
 button:disabled { opacity: .5; cursor: default; }
+
+/* タッチ端末では :hover がタップ後に貼り付くため、ホバー可能な環境に限定する */
+@media (hover: hover) {
+  button:hover, .button:hover { background: #eef1f5; }
+  button.primary:hover, .button.primary:hover { background: #1a5fd0; }
+  .entry-table input:hover { border-color: var(--border); }
+}
+/* ホバーで押下前のフィードバックが得られないタッチ環境にだけ :active を出す */
+@media (hover: none) {
+  button:active, .button:active { background: #e6eaf0; }
+  button.primary:active, .button.primary:active { background: #1a5fd0; }
+}
 
 input, select, textarea {
   font: inherit; padding: 4px 7px; border: 1px solid var(--border);
@@ -61,6 +76,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .summary .total { font-size: 20px; font-variant-numeric: tabular-nums; }
 .summary .sub { font-size: 11px; color: var(--muted); }
 .summary a.button { margin-left: auto; }
+/* 帳票ヘッダ側のダウンロードはモバイル専用 */
+.meta-report { display: none; }
 
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
 @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
@@ -81,7 +98,6 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .entry-table .col-loc { width: 150px; }
 .entry-table .col-act { width: 130px; }
 .entry-table input { width: 100%; border-color: transparent; background: transparent; }
-.entry-table input:hover { border-color: var(--border); }
 .entry-table .date-field { width: 118px; }
 .entry-table .weekday { font-size: 11px; color: var(--muted); margin-left: 4px; }
 .row-actions { display: flex; gap: 4px; white-space: nowrap; }
@@ -93,6 +109,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .quick-add {
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
 }
+.quick-add-title { display: none; }
 .quick-add-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .quick-add-row label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
 .quick-add-row label.grow { flex: 1; min-width: 200px; }
@@ -172,3 +189,160 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .edit-form input { width: 100%; color: var(--text); }
 .edit-form fieldset { border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; background: var(--surface); }
 .edit-form legend { font-size: 11px; color: var(--muted); padding: 0 4px; }
+
+/* iOS Safari は 16px 未満の入力にフォーカスするとページを勝手に拡大する。
+   横向きで幅が広くなっても起きるので、幅ではなく入力環境で当てる。 */
+@media (max-width: 720px), (hover: none) and (pointer: coarse) {
+  input, select, textarea { font-size: 16px; }
+}
+
+/* =========================================================================
+   狭い画面(〜860px)の明細一覧
+
+   列固定幅の合計(約 682px)を確保できない幅ではテーブルが破綻する。加えて、
+   月に20件前後並ぶ一覧を全件フォームのまま出すとスクロールが長くなりすぎるため、
+   既定は1件2行の読み取り表示にし、タップしたときだけ編集欄を開く。
+   (このブロックの要素は EntryTable が狭い画面でのみ描画する)
+   ========================================================================= */
+.entry-list { display: flex; flex-direction: column; gap: 8px; }
+.entry-list-title { font-size: 13px; color: var(--muted); margin: 0; }
+.entry-list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+
+.entry-item {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.entry-item.is-weekend { background: var(--weekend); }
+.entry-item.is-open { border-color: var(--accent); }
+
+/* .entry-item の overflow: hidden で外側の outline が切れるため内側に描く */
+.entry-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.entry-head {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 1px 10px;
+  width: 100%; padding: 9px 12px; text-align: left; align-items: baseline;
+  border: none; border-radius: 0; background: transparent; font-size: 14px;
+}
+.entry-date { font-weight: 600; font-variant-numeric: tabular-nums; }
+.entry-weekday { font-weight: 400; font-size: 11px; color: var(--muted); margin-left: 3px; }
+.entry-span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.entry-dur { justify-self: end; font-weight: 600; font-variant-numeric: tabular-nums; }
+.entry-desc {
+  grid-column: 1 / -1; font-size: 12px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.entry-edit {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  padding: 12px; border-top: 1px solid var(--border); background: var(--surface);
+}
+.entry-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+.entry-field-wide { grid-column: 1 / -1; }
+/* 16px 未満だと iOS がフォーカス時にページを拡大する */
+.entry-field input { width: 100%; min-height: 44px; font-size: 16px; color: var(--text); }
+.entry-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+.entry-actions button { min-height: 40px; padding: 8px 14px; }
+
+/* =========================================================================
+   モバイル(〜720px)
+   このツールはスマートフォンからの「実績入力」が主な用途になるため、
+   - 入力フォームを一覧より上に置く
+   - 一覧はテーブルではなく1明細=1カードにして、その場で直せるようにする
+   - フォントは 16px 以上にして iOS のフォーカス時ズームを防ぐ
+   - タップ目標を 44px 前後まで広げる
+   を方針にレイアウトを組み替える。
+   ========================================================================= */
+@media (max-width: 720px) {
+  .app {
+    padding:
+      12px
+      max(12px, env(safe-area-inset-right))
+      calc(32px + env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+  h1 { font-size: 16px; }
+
+  /* ヘッダは「委託件名」「月移動」「管理」の3段。片手でも押せる高さにする */
+  .app-header { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px; }
+  .header-controls { gap: 8px; }
+  .header-controls .spacer { display: none; }
+  .contract-select { order: 1; flex: 1 1 100%; max-width: none; min-height: 44px; }
+  .month-nav { order: 2; flex: 1 1 100%; }
+  .month-nav .month-field { flex: 1; width: auto; min-height: 44px; text-align: center; }
+  .month-nav button { flex: 0 0 60px; min-height: 44px; }
+  .manage-button { order: 3; flex: 1 1 100%; min-height: 40px; }
+
+  /* サマリは「どの取引先か」と「今月の合計」だけの1行に畳む。
+     委託件名はセレクトに、明細件数は一覧の見出しに出ているので省く。
+     帳票出力は月に一度の操作なので、提出日・特記事項と並べて下へ移す。 */
+  .summary {
+    flex-wrap: nowrap; justify-content: space-between; gap: 12px;
+    padding: 10px 12px; margin-bottom: 12px;
+  }
+  .summary-item.is-contract, .summary-item.is-count, .summary-report { display: none; }
+  .summary-item.is-client { min-width: 0; }
+  .summary-item.is-client strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .summary-item.is-total { align-items: flex-end; text-align: right; flex: 0 0 auto; }
+  .meta-report {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 46px; font-size: 15px; margin-top: 4px;
+  }
+
+  .layout { gap: 12px; }
+  .main-col, .side-col { gap: 12px; }
+
+  /* 入力が主目的なので、一覧より前に出す */
+  .quick-add {
+    order: -1; padding: 12px; border-color: #c3d6f7;
+    box-shadow: 0 1px 3px rgba(20, 24, 30, .06);
+  }
+  .quick-add-title { display: block; font-size: 13px; margin: 0 0 10px; }
+  .quick-add-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+  /* 開始 / 終了 だけ2列に並べ、他は全幅 */
+  .quick-add-row > * { grid-column: 1 / -1; }
+  .quick-add-row > label.time-col { grid-column: auto; }
+  .quick-add-row label { gap: 4px; }
+  .quick-add-row label.grow { min-width: 0; }
+  .quick-add-row input, .quick-add-row label:not(.grow) input { width: 100%; }
+  .quick-add-row input { min-height: 44px; }
+  .quick-add-row > label.time-col input { text-align: center; font-size: 18px; }
+  .with-weekday { width: 100%; }
+  .with-weekday input { width: auto !important; flex: 1 1 auto; min-width: 0; }
+  .with-weekday .weekday { font-size: 13px; }
+  .quick-add-row > button { min-height: 48px; font-size: 16px; font-weight: 600; margin-top: 2px; }
+
+  .quick-add-helpers { margin-top: 12px; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; min-height: 36px; padding: 6px 12px; font-size: 13px; }
+  .only-desktop { display: none; }
+
+  .empty { padding: 20px 14px; }
+
+  .calendar-grid { gap: 3px; }
+  .calendar-cell { aspect-ratio: auto; min-height: 46px; }
+  .calendar-cell .day { font-size: 13px; }
+  .calendar-cell .amount { font-size: 10px; min-height: 12px; }
+
+  .report-meta input, .report-meta textarea { min-height: 44px; }
+
+  /* モーダルはボトムシートにする(狭い画面では中央寄せより縦を使い切れる) */
+  .overlay { padding: 0; align-items: flex-end; }
+  .panel {
+    width: 100%; max-width: none; border-radius: 14px 14px 0 0; gap: 12px;
+    max-height: 92vh; max-height: 92dvh;
+    padding:
+      16px
+      max(14px, env(safe-area-inset-right))
+      calc(16px + env(safe-area-inset-bottom))
+      max(14px, env(safe-area-inset-left));
+  }
+  .panel input, .panel textarea, .panel select { min-height: 44px; }
+  .panel button { min-height: 40px; }
+  .panel-actions button { flex: 1; min-height: 44px; }
+  .panel label.show-archived input { min-height: 0; }
+  .manage-tree > li { padding: 10px; }
+  .manage-row { flex-wrap: wrap; align-items: center; row-gap: 8px; }
+  .manage-row .manage-name { flex: 1 1 100%; }
+  .manage-row .manage-sub { flex: 1 1 auto; white-space: normal; }
+  .manage-row button { padding: 6px 12px; font-size: 13px; min-height: 36px; }
+  .manage-contracts { padding-left: 10px; gap: 8px; }
+  .manage-contracts button { padding: 6px 12px; font-size: 13px; min-height: 36px; }
+}
