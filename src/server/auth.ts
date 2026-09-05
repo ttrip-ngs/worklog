@@ -93,8 +93,16 @@ export const requireUser: MiddlewareHandler<AppBindings> = async (c, next) => {
   }
   const user = await resolveUser(c.req.raw, c.env);
   if (!user) {
+    // 401 の原因は環境で違う。Access 有効なら再ログイン、ローカルなら擬似ログインの設定漏れ。
+    // ローカルの案内で wrangler.jsonc を指すと、vars に書かれて本番に載る事故につながるため
+    // 必ず .dev.vars と書く。
     return c.json(
-      { error: "未認証です。ページを再読み込みしてログインし直してください。" },
+      {
+        error:
+          c.env.ACCESS_TEAM_DOMAIN && c.env.ACCESS_AUD
+            ? "未認証です。ページを再読み込みしてログインし直してください。"
+            : "未認証です。ローカル開発では .dev.vars に DEV_AUTH_EMAIL を設定してください。",
+      },
       401,
     );
   }

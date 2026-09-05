@@ -3,13 +3,15 @@ import { useEffect, useState } from "react";
 type Props = {
   value: string;
   onCommit: (v: string) => void;
+  /** 一覧では列見出し(th)が入力欄の名前にならないため、行ごとに明示する。 */
+  ariaLabel?: string;
   listId?: string;
   placeholder?: string;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 };
 
 /** blur / Enter で確定するテキスト入力(datalist 対応)。 */
-export function TextField({ value, onCommit, listId, placeholder, onKeyDown }: Props) {
+export function TextField({ value, onCommit, ariaLabel, listId, placeholder, onKeyDown }: Props) {
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
 
@@ -20,6 +22,7 @@ export function TextField({ value, onCommit, listId, placeholder, onKeyDown }: P
   return (
     <input
       className="text-field"
+      aria-label={ariaLabel}
       value={text}
       list={listId}
       placeholder={placeholder}
