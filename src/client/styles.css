@@ -89,7 +89,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
   border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
 }
 .entry-table th, .entry-table td { border-bottom: 1px solid var(--border); padding: 3px 6px; text-align: left; }
-.entry-table th { background: #eef1f5; font-size: 12px; font-weight: 600; color: var(--muted); }
+/* padding-left は見出しの文字位置をセルの値に揃えるためのもの。行内の入力欄は
+   border(1px)+padding(7px) の分だけ内側から文字が始まるので、左寄せの見出しをその分ずらす。 */
+.entry-table th {
+  background: #eef1f5; font-size: 12px; font-weight: 600; color: var(--muted); padding-left: 14px;
+}
+.entry-table th.col-time { padding-left: 6px; text-align: center; }
+.entry-table th.col-dur { padding-left: 6px; padding-right: 12px; text-align: right; }
 .entry-table tr.is-weekend td { background: var(--weekend); }
 .entry-table td.num { font-variant-numeric: tabular-nums; text-align: right; padding-right: 12px; }
 .entry-table .col-date { width: 168px; }

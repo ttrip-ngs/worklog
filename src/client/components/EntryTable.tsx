@@ -126,11 +126,14 @@ function Row({ entry: e, month, onUpdate, onDelete, onDuplicate }: RowProps) {
           onCommit={(v) => onUpdate(e.id, payloadOf(e, { location: v }))}
         />
       </td>
-      <td className="row-actions">
-        <button type="button" title="この行を複製して追加" onClick={() => onDuplicate(e)}>
-          複製
-        </button>
-        <DeleteButtons onDelete={() => onDelete(e.id)} />
+      <td className="col-act">
+        {/* td 自体を flex にすると table-cell でなくなり、列幅と行の背景・罫線が崩れる */}
+        <div className="row-actions">
+          <button type="button" title="この行を複製して追加" onClick={() => onDuplicate(e)}>
+            複製
+          </button>
+          <DeleteButtons onDelete={() => onDelete(e.id)} />
+        </div>
       </td>
     </tr>
   );
