@@ -8,11 +8,31 @@ import type {
   SessionUser,
 } from "../shared/types";
 
+/**
+ * Cloudflare Access のセッション切れ。再読み込みすれば Access のログイン画面へ
+ * リダイレクトされるので、そこに任せる。
+ *
+ * ローカルで擬似ログインが未設定のときも 401 になるため、リロードは1セッション1回までに
+ * 制限する(無限リロードを防ぐ)。認証済みのレスポンスが返った時点でフラグを戻す。
+ */
+const REAUTH_KEY = "worklog:reauth";
+
+function reloadForLogin(): void {
+  if (sessionStorage.getItem(REAUTH_KEY)) return;
+  sessionStorage.setItem(REAUTH_KEY, "1");
+  location.reload();
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
+  if (res.status === 401) {
+    reloadForLogin();
+    throw new Error("認証の有効期限が切れました。ページを再読み込みしてください。");
+  }
+  sessionStorage.removeItem(REAUTH_KEY);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `通信に失敗しました (${res.status})`);

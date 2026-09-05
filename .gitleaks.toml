@@ -1,0 +1,15 @@
+# gitleaks の設定。既定ルールを継承したうえで、誤検知だけを限定的に除外する。
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+  [rules.allowlist]
+  # Cloudflare Access のアプリケーション Audience (AUD) タグ。64桁の16進文字列で
+  # エントロピーが高いため generic-api-key に引っかかるが、秘密情報ではない。
+  # 未認証アクセス時のリダイレクト URL に平文で現れる公開の識別子で、
+  # JWT の aud クレームと照合するためだけに使う(知っていても認証は突破できない)。
+  regexTarget = "line"
+  regexes = ['"ACCESS_AUD":\s*"[0-9a-f]{64}"']
+  paths = ['^wrangler\.jsonc$']

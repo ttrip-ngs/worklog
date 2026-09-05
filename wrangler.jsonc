@@ -10,16 +10,38 @@
     // xlsx の代わりに index.html が返る。
     "run_worker_first": ["/api/*"]
   },
+
+  // 独自ドメインで公開する。ttripnw.com は Cloudflare 管理下のゾーン。
+  "routes": [
+    {
+      "pattern": "worklog.ttripnw.com",
+      "custom_domain": true
+    }
+  ],
+
+  "vars": {
+    // Cloudflare Access のチーム(Zero Trust)ドメイン。
+    // Zero Trust ダッシュボード > 設定 > チーム名とドメイン で確認できる。
+    "ACCESS_TEAM_DOMAIN": "ttripnw.cloudflareaccess.com",
+    // Access アプリケーション "worklog" の Audience (AUD) タグ。
+    // Zero Trust > Access コントロール > アプリケーション > worklog > 追加設定 > AUDタグ。
+    // 秘密情報ではない(JWT の aud クレームと照合するだけ)。
+    "ACCESS_AUD": "a6b32f5bd4929ab62f24686774b9e54dc6a9ecde974462ce6e2e063062f00c41",
+    // Access ポリシーの設定ミスに対する二重の防御。カンマ区切り。空にすると Worker 側では照合しない。
+    "ALLOWED_EMAILS": "ttrip@ttrip.work"
+  },
+  // 上記2つが両方埋まっているときだけ Access の JWT 検証が有効になる(src/server/auth.ts)。
+  // 値が間違っていれば検証に失敗して 401 になるため、素通しにはならない。
+  // 擬似ログイン用の DEV_AUTH_EMAIL / DEV_AUTH_NAME は .dev.vars に置くこと。
+  // ここ(vars)に書くと wrangler deploy でそのまま本番に載る。
+
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "worklog-db",
-      // ローカル(miniflare)ではこの文字列から派生した sqlite ファイルが使われるだけで、
-      // 値自体に意味はない(変更するとローカルDBが別ファイルに切り替わる)。
-      // デプロイ前に `wrangler d1 create worklog-db` で発行される実IDへ差し替えること。
-      "database_id": "local-worklog-db"
+      // 本番の D1。ローカル(miniflare)ではこの文字列から派生した sqlite ファイルが
+      // 使われるだけで、値自体に意味はない(変更するとローカルDBが別ファイルに切り替わる)。
+      "database_id": "186d43a9-b10d-418e-a4de-5ba10b603e71"
     }
   ]
-  // 擬似ログイン用の DEV_AUTH_EMAIL / DEV_AUTH_NAME は .dev.vars に置く。
-  // ここ(vars)に書くと wrangler deploy でそのまま本番に載り、認証が素通しになるため。
 }
