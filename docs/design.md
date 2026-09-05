@@ -9,7 +9,7 @@
 - 既存 Excel と同じ帳票を出力できる
 - 将来 Cloudflare (Workers + D1) にそのまま載せられる構成である
 
-未実装(意図的に後回し):Google Workspace 認証、本番デプロイ、複数ユーザーのデータ分離。
+未実装(意図的に後回し):複数ユーザーのデータ分離。認証は Cloudflare Access で実装済み(4章)。
 
 ## 2. データモデル
 
@@ -119,39 +119,76 @@ report_meta (月次帳票のヘッダ)
 値・スタイルID・結合セルがすべて一致し、macOS の Quick Look でレンダリングした画像も
 バイト単位で一致することを確認済み。
 
-## 4. 認証(未実装)
+## 4. 認証
 
-`src/server/auth.ts` の `resolveUser()` が**認証**の差し替え点。現在は `.dev.vars` の
-`DEV_AUTH_EMAIL` による擬似ログインのみで、未設定なら API は 401 を返す(fail-closed)。
+`src/server/auth.ts` の `resolveUser()` が認証の差し替え点。本番は **Cloudflare Access**
+(Zero Trust) をアプリの手前に置き、Worker 側は Access が付与する JWT を検証する。
 
-擬似ログインの設定を `wrangler.jsonc` の `vars` に置かないこと。`vars` は `wrangler deploy`
-でそのまま本番に載るため、認証未実装のまま公開すると誰でも読み書きできる状態になる。
+### なぜ Cloudflare Access か
 
-本番で Google Workspace を使う場合の想定:
+当初は Google Workspace の OAuth を自前実装する想定だったが、次の理由で Access に変えた。
 
-1. `/auth/login` → Google の認可エンドポイントへリダイレクト(scope: `openid email profile`)
-2. `/auth/callback` → code を id_token に交換し、`hd` クレームを `ALLOWED_HD` と照合
-3. 署名付き Cookie (HttpOnly / Secure / SameSite=Lax) にセッションを保存
-4. `resolveUser()` が Cookie を検証してユーザーを返す
+- ログイン画面・セッション管理・IdP 連携を Cloudflare 側が持つ。クライアントシークレットを
+  自分で保管しなくてよい
+- 認証は Worker の手前で終わるため、静的アセット(index.html / JS / CSS)も同時に保護される。
+  自前実装だと Worker のコードに到達する前のアセット配信を塞げない
+- IdP は Google Workspace でもワンタイム PIN でも選べる。実装は変わらない
 
-クライアントシークレットは `wrangler secret put` で Workers Secrets に置く。
-セッション Cookie は SameSite=Lax とし、更新系リクエストでは Origin ヘッダを検証する(CSRF 対策)。
+### 実装
+
+`ACCESS_TEAM_DOMAIN` と `ACCESS_AUD` が**両方**設定されているときだけ Access モードになる。
+
+1. Access が認証済みリクエストに `Cf-Access-Jwt-Assertion` ヘッダを付ける
+2. `resolveAccessUser()` が `https://<team>.cloudflareaccess.com/cdn-cgi/access/certs` の
+   JWKS で署名を検証し、`iss` と `aud` を照合する
+3. `email` クレームをセッションユーザーとして返す
+
+ヘッダの存在だけを信用しない。Access を経由しない経路や偽装ヘッダで素通しになるため、
+署名・`iss`・`aud` を必ず検証する。`ALLOWED_EMAILS` を設定すると、Access ポリシーの
+設定ミスに対する二重の防御として Worker 側でもメールを照合する。
+
+`ctx.access` API は使っていない。静的アセットを使う Worker では内部ルータが `ctx.access` を
+ユーザ Worker へ伝播しないため(Cloudflare ドキュメント「ctx.access limitations」)。
+
+### 擬似ログインとの関係
+
+`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` が欠けている場合のみ `.dev.vars` の `DEV_AUTH_EMAIL` に
+フォールバックする。どちらも無ければ 401(fail-closed)。
+
+Access モードのときは擬似ログインを**一切見ない**。本番に `DEV_AUTH_EMAIL` が紛れ込んでも
+認証を素通りさせないため。逆にローカルでは `.dev.vars` で `ACCESS_TEAM_DOMAIN=` と
+`ACCESS_AUD=` を空にして、`wrangler.jsonc` の `vars` を打ち消す(`.dev.vars` が優先される)。
+
+### CSRF 対策
+
+Access のセッションは Cookie で維持されるため、他サイトからのフォーム送信でも Cloudflare 側の
+認証は通ってしまう。`requireUser` は GET / HEAD 以外で `Origin` ヘッダを検証し、リクエスト
+URL のオリジンと一致しないもの(ヘッダが無いものも含む)を 403 で弾く。
 
 ### 認可(データ分離)は別作業
 
-`resolveUser()` の差し替えで済むのは「誰がアクセスしているか」までで、「誰のデータか」は
-別途対応が必要。現状は次の理由で、単一ユーザー前提になっている。
+`resolveUser()` で分かるのは「誰がアクセスしているか」までで、「誰のデータか」は別途対応が
+必要。現状は次の理由で単一ユーザー前提になっている。
 
 - `clients` に所有者カラムがない
 - `PUT /entries/:id` / `DELETE /entries/:id` は id 直指定で所有チェックがない
 
-複数ユーザーで使う場合は `clients` に所有者(またはメンバー表)を追加し、`src/server/db.ts`
-の各クエリにスコープ条件を足す必要がある。単一ユーザーで使う間は不要(YAGNI)。
+Access ポリシーを自分のメールアドレス1件に絞っている限り問題にならない。複数ユーザーで使う
+場合は `clients` に所有者(またはメンバー表)を追加し、`src/server/db.ts` の各クエリに
+スコープ条件を足す必要がある。
 
 ### デプロイ前に必要な差し替え
 
-`wrangler.jsonc` の `database_id` はプレースホルダ。`wrangler d1 create worklog-db` で
-発行される実IDに差し替えないとデプロイは失敗する。
+`wrangler.jsonc` の以下は `TODO` のままではデプロイできない / 認証が機能しない。
+
+| 項目 | 取得方法 |
+| --- | --- |
+| `routes[0].pattern` | 公開する独自ドメインのホスト名 |
+| `vars.ACCESS_TEAM_DOMAIN` | Zero Trust ダッシュボードの `<team>.cloudflareaccess.com` |
+| `vars.ACCESS_AUD` | Zero Trust > Access > Applications > 当該アプリの Audience タグ |
+| `d1_databases[0].database_id` | `wrangler d1 create worklog-db` の出力 |
+
+`ACCESS_*` が誤った値でも JWT 検証に失敗して 401 になるだけで、素通しにはならない。
 
 ## 5. Workers の静的アセットと API のルーティング
 
@@ -173,7 +210,6 @@ report_meta (月次帳票のヘッダ)
 
 ## 7. 今後の候補
 
-- Google Workspace 認証の実装とデプロイ
 - 取引先ごとの帳票テンプレート差し替え(現在は1種類のみ)
 - 月次締めのロック(提出済みの月を編集不可にする)
 - CSV 取り込み / カレンダー連携
