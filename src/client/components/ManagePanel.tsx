@@ -2,8 +2,18 @@ import { useState } from "react";
 import type { Client, ClientWithContracts, Contract } from "../../shared/types";
 import type { ClientInput, ContractInput } from "../api";
 
+/** パネルを開いた直後に表示する編集フォーム。null なら一覧のみ。 */
+export type ManageEditing =
+  | { kind: "client"; client?: Client }
+  | { kind: "contract"; clientId: number; contract?: Contract }
+  | null;
+
 type Props = {
   clients: ClientWithContracts[];
+  /** 報告者氏名の初期値(ログイン中のアカウント名)。取引先の新規追加時のみ使う。 */
+  defaultReporter?: string;
+  /** 開いた直後に表示する編集フォーム。呼び出し側が「次にやること」を指定する。 */
+  initialEditing?: ManageEditing;
   onCreateClient: (input: ClientInput) => Promise<Client>;
   onUpdateClient: (id: number, input: ClientInput) => Promise<void>;
   onCreateContract: (clientId: number, input: ContractInput) => Promise<Contract>;
@@ -13,22 +23,21 @@ type Props = {
   onClose: () => void;
 };
 
-type Editing =
-  | { kind: "client"; client?: Client }
-  | { kind: "contract"; clientId: number; contract?: Contract }
-  | null;
-
 function ClientFields({
   initial,
+  defaultReporter,
   onSave,
   onCancel,
 }: {
   initial?: Client;
+  defaultReporter?: string;
   onSave: (input: ClientInput) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [reporter, setReporter] = useState(initial?.reporter_name ?? "");
+  // 新規追加のときだけログイン中のアカウント名を初期値に入れる。
+  // 編集では保存済みの値をそのまま出す(空なら空のまま)。
+  const [reporter, setReporter] = useState(initial ? initial.reporter_name : (defaultReporter ?? ""));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -55,6 +64,11 @@ function ClientFields({
         報告者氏名(帳票に出力)
         <input value={reporter} onChange={(e) => setReporter(e.target.value)} />
       </label>
+      {!initial && defaultReporter && (
+        <p className="hint">
+          ログイン中のアカウント名を初期値にしています。帳票に出す名前が違う場合は変更してください。
+        </p>
+      )}
       {error && <p className="error">{error}</p>}
       <div className="panel-actions">
         <button type="button" onClick={onCancel}>
@@ -181,6 +195,8 @@ function ArchiveButton({
 /** 取引先と、その配下の委託件名をまとめて管理するパネル。 */
 export function ManagePanel({
   clients,
+  defaultReporter,
+  initialEditing,
   onCreateClient,
   onUpdateClient,
   onCreateContract,
@@ -193,7 +209,7 @@ export function ManagePanel({
     (c) => c.archived === 1 || c.contracts.some((ct) => ct.archived === 1),
   );
   const [showArchived, setShowArchived] = useState(false);
-  const [editing, setEditing] = useState<Editing>(clients.length === 0 ? { kind: "client" } : null);
+  const [editing, setEditing] = useState<ManageEditing>(initialEditing ?? null);
   const visibleClients = showArchived ? clients : clients.filter((c) => c.archived !== 1);
 
   return (
@@ -284,11 +300,17 @@ export function ManagePanel({
         {editing?.kind === "client" && (
           <ClientFields
             initial={editing.client}
+            defaultReporter={defaultReporter}
             onCancel={() => setEditing(null)}
             onSave={async (input) => {
-              if (editing.client) await onUpdateClient(editing.client.id, input);
-              else await onCreateClient(input);
-              setEditing(null);
+              if (editing.client) {
+                await onUpdateClient(editing.client.id, input);
+                setEditing(null);
+                return;
+              }
+              // 取引先だけでは帳票を出せないため、続けて委託件名の入力に進む。
+              const created = await onCreateClient(input);
+              setEditing({ kind: "contract", clientId: created.id });
             }}
           />
         )}
