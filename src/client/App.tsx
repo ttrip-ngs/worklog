@@ -1,14 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ClientWithContracts, Entry, MonthResponse } from "../shared/types";
+import type { ClientWithContracts, Entry, MonthResponse, SessionUser } from "../shared/types";
 import { formatDuration, shiftMonth, sumDuration } from "../shared/time";
 import { ApiError, api, type ClientInput, type ContractInput, type EntryPayload } from "./api";
 import { EntryTable } from "./components/EntryTable";
 import { QuickAdd } from "./components/QuickAdd";
 import { MonthCalendar } from "./components/MonthCalendar";
-import { ManagePanel } from "./components/ManagePanel";
+import { ManagePanel, type ManageEditing } from "./components/ManagePanel";
 import { MonthLock } from "./components/MonthLock";
 
 const LAST_CONTRACT_KEY = "worklog.lastContractId";
+const THEME_KEY = "worklog.theme";
+
+type Theme = "system" | "light" | "dark";
+
+// index.html の theme-color と揃えること(--bg のライト/ダーク値)
+const THEME_BG: Record<"light" | "dark", string> = { light: "#f5f6f8", dark: "#14171c" };
+
+function storedTheme(): Theme {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    if (t === "light" || t === "dark") return t;
+  } catch {
+    // プライベートブラウズ等で localStorage が使えない場合は OS 追従のまま
+  }
+  return "system";
+}
 
 function currentMonthJst(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -28,12 +44,41 @@ export default function App() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [managing, setManaging] = useState(false);
+  // 管理パネルを開いた直後に出すフォーム。「次にやること」を呼び出し側から指定する。
+  const [manageIntent, setManageIntent] = useState<ManageEditing>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [theme, setTheme] = useState<Theme>(storedTheme);
   const [inputDate, setInputDate] = useState(`${month}-01`);
   const [savedAt, setSavedAt] = useState("");
   const quickAddRef = useRef<HTMLDivElement>(null);
   // 帳票ヘッダの保存(onBlur)は、締めるボタンのクリックより先に走る。締める前にこれを
   // 待たないと、保存が締めたあとに届いて 409 になり、入力した特記事項が消える。
   const pendingMetaRef = useRef<Promise<unknown> | null>(null);
+
+  /**
+   * テーマの反映。system のときは data-theme を外して OS 追従に戻す。
+   *
+   * theme-color の meta は media 属性で OS 設定に紐づいているため、明示的にテーマを
+   * 選んだ場合はそのままだと Safari のツールバーだけ逆の色で残る。両方の meta を
+   * 選択中のテーマの背景色で上書きして揃える。
+   */
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "system") delete root.dataset.theme;
+    else root.dataset.theme = theme;
+
+    try {
+      if (theme === "system") localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // 保存できなくても表示の切り替え自体は効く
+    }
+
+    document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => {
+      const own = m.media.includes("dark") ? "dark" : "light";
+      m.content = THEME_BG[theme === "system" ? own : theme];
+    });
+  }, [theme]);
 
   /**
    * カレンダーで日を選んだときの遷移。モバイルでは入力欄が画面上部・カレンダーが
@@ -64,6 +109,15 @@ export default function App() {
     [activeClients],
   );
 
+  // DEV_AUTH_NAME 未設定だと name にメールアドレスが入る。帳票に出す報告者名としては
+  // 使えないため、その場合は初期値を入れない。
+  const loginName = user && user.name !== user.email ? user.name : "";
+
+  const openManage = useCallback((intent: ManageEditing = null) => {
+    setManageIntent(intent);
+    setManaging(true);
+  }, []);
+
   const loadClients = useCallback(async () => {
     const list = await api.clients(true);
     setClients(list);
@@ -86,8 +140,11 @@ export default function App() {
     return res;
   }, []);
 
+  // 初回ロード。報告者の初期値にログイン名を使うため、/me が揃うまで画面を出さない
+  // (先に出すと、名前が届く前に開いた取引先フォームで報告者が空のまま確定してしまう)。
   useEffect(() => {
-    loadClients()
+    Promise.all([loadClients(), api.me()])
+      .then(([, me]) => setUser(me))
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, [loadClients]);
@@ -160,6 +217,8 @@ export default function App() {
   const managePanel = managing && (
     <ManagePanel
       clients={clients}
+      defaultReporter={loginName || undefined}
+      initialEditing={manageIntent}
       onClose={() => setManaging(false)}
       onCreateClient={async (input: ClientInput) => {
         const created = await api.createClient(input);
@@ -201,22 +260,152 @@ export default function App() {
     );
   }
 
-  if (activeContractIds.length === 0) {
+  // 空状態の案内画面でも切り替えられるよう、両方のヘッダに置く
+  const themeSelect = (
+    <select
+      className="theme-select"
+      aria-label="表示テーマ"
+      value={theme}
+      onChange={(e) => setTheme(e.target.value as Theme)}
+    >
+      <option value="system">システム</option>
+      <option value="light">ライト</option>
+      <option value="dark">ダーク</option>
+    </select>
+  );
+
+  const userBadge = user && (
+    <span className="user-badge" title={user.email}>
+      <span className="user-name">{user.name}</span>
+      <span className="user-email">{user.email}</span>
+    </span>
+  );
+
+  const appHeader = (
+    <header className="app-header">
+      <h1>稼働実績管理</h1>
+      <span className="spacer" />
+      {themeSelect}
+      {userBadge}
+    </header>
+  );
+
+  // 読み込みに失敗したときは中身が空なのか取れていないのか区別できない。
+  // 「まだ登録が無い」前提の案内を出すとかえって誤解させるため、エラーだけを見せる。
+  if (error && clients.length === 0) {
     return (
       <main className="app">
-        <h1>稼働実績管理</h1>
-        {error && <p className="error">{error}</p>}
-        <p>まず取引先と委託件名を登録してください。</p>
-        <button type="button" className="primary" onClick={() => setManaging(true)}>
-          取引先・委託件名を登録
-        </button>
-        {managePanel}
+        {appHeader}
+        <p className="error">{error}</p>
       </main>
     );
   }
 
-  return (
-    <main className="app">
+  // 選べる委託件名が1つも無いときは通常画面に出すものが何も無いため、
+  // 「今どういう状態で、次に何をすればよいか」を説明する画面に切り替える。
+  // 管理パネルは両方の画面で同じ位置に置く。位置がずれると画面の切り替わりで
+  // 再マウントされ、開いていた編集フォームが initialEditing に巻き戻ってしまう。
+  const onboarding = (() => {
+    // 非表示にした / 取引先だけある / まっさらの3状態で、案内する内容が変わる。
+    // 選べる委託件名が0件のこの分岐では、存在する委託件名はすべて非表示のもの。
+    // 1チェックで元に戻せるため、新規登録より先に再表示を案内する。
+    const hasHidden = clients.some((c) => c.archived === 1 || c.contracts.length > 0);
+    // 委託件名を1件も持たない(非表示のものも無い)取引先。ここに1件足せば使い始められる。
+    const clientWithoutContract = clients.find((c) => c.archived !== 1 && c.contracts.length === 0);
+
+    return (
+      <>
+        {appHeader}
+
+        {error && <p className="error">{error}</p>}
+
+        <section className="onboarding">
+          <p className="onboarding-lead">
+            日々の稼働実績を記録して、取引先に提出する「業務日報」の Excel を出力するツールです。
+            帳票は<strong>委託件名 × 月</strong>で1枚出力します。
+          </p>
+
+          <div className="onboarding-flow">
+            <span className="flow-item">
+              取引先<em>会社</em>
+            </span>
+            <span className="flow-arrow" aria-hidden="true">
+              ▸
+            </span>
+            <span className="flow-item">
+              委託件名<em>契約単位・帳票1枚に対応</em>
+            </span>
+            <span className="flow-arrow" aria-hidden="true">
+              ▸
+            </span>
+            <span className="flow-item">
+              稼働実績<em>日ごとの明細</em>
+            </span>
+          </div>
+
+          {hasHidden ? (
+            <>
+              <p className="onboarding-status">
+                いま選べる委託件名がありません。非表示にした取引先・委託件名が残っているため、
+                管理画面で「非表示にしたものも表示する」にチェックを入れて再表示すれば元に戻せます
+                (実績データは消えていません)。
+              </p>
+              <button type="button" className="primary" onClick={() => openManage()}>
+                取引先・委託件名の管理を開く
+              </button>
+            </>
+          ) : clientWithoutContract ? (
+            <>
+              <p className="onboarding-status">
+                取引先「{clientWithoutContract.name}」は登録済みです。あと1ステップ、
+                帳票の単位になる委託件名を登録すると稼働実績を入力できます。
+              </p>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => openManage({ kind: "contract", clientId: clientWithoutContract.id })}
+              >
+                「{clientWithoutContract.name}」に委託件名を登録
+              </button>
+            </>
+          ) : (
+            <>
+              <ol className="onboarding-steps">
+                <li>
+                  <span className="step-title">取引先を登録する</span>
+                  <span className="step-desc">
+                    会社名と、帳票に出力する報告者氏名。報告者は
+                    {loginName ? `ログイン中の「${loginName}」` : "ログイン中のアカウント名"}
+                    を初期値にします(取引先ごとに後から変更できます)。
+                  </span>
+                </li>
+                <li>
+                  <span className="step-title">委託件名を登録する</span>
+                  <span className="step-desc">
+                    帳票ヘッダに出る委託件名・委託内容(最大4行)・備考欄の既定値。
+                    1つの取引先に複数登録でき、それぞれ別の帳票になります。
+                  </span>
+                </li>
+                <li>
+                  <span className="step-title">稼働実績を入力する</span>
+                  <span className="step-desc">
+                    日付・開始/終了時刻・業務内容を追加すると、その月の Excel 帳票を
+                    ダウンロードできるようになります。
+                  </span>
+                </li>
+              </ol>
+              <button type="button" className="primary" onClick={() => openManage({ kind: "client" })}>
+                取引先を登録して始める
+              </button>
+            </>
+          )}
+        </section>
+      </>
+    );
+  })();
+
+  const workspace = (
+    <>
       <header className="app-header">
         <h1>稼働実績管理</h1>
         <div className="header-controls">
@@ -237,7 +426,7 @@ export default function App() {
                 </optgroup>
               ))}
           </select>
-          <button type="button" className="manage-button" onClick={() => setManaging(true)}>
+          <button type="button" className="manage-button" onClick={() => openManage()}>
             取引先・委託件名の管理
           </button>
           <span className="spacer" />
@@ -255,7 +444,9 @@ export default function App() {
               ▶
             </button>
           </div>
+          {themeSelect}
         </div>
+        {userBadge}
       </header>
 
       {error && <p className="error">{error}</p>}
@@ -395,7 +586,12 @@ export default function App() {
           <option key={v} value={v} />
         ))}
       </datalist>
+    </>
+  );
 
+  return (
+    <main className="app">
+      {activeContractIds.length === 0 ? onboarding : workspace}
       {managePanel}
     </main>
   );

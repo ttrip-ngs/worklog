@@ -249,8 +249,8 @@ api.post("/contracts/:id/entries", async (c) => {
 
 api.put("/entries/:id", async (c) => {
   const id = parseId(c.req.param("id"));
-  const input = parseEntryInput(await readJson(c));
   const current = await requireWritableEntry(c.env.DB, id);
+  const input = parseEntryInput(await readJson(c));
   // 移動元・移動先の両方を見る。締め済みの月から出すのも、締め済みの月へ入れるのも変更にあたる。
   await requireUnlockedMonth(c.env.DB, current.contract_id, current.work_date.slice(0, 7));
   await requireUnlockedMonth(c.env.DB, current.contract_id, input.work_date.slice(0, 7));
