@@ -358,6 +358,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
   .empty { padding: 20px 14px; }
 
   .onboarding { padding: 16px 14px; gap: 14px; }
+  /* 3つを横に並べると幅が足りず矢印だけが行頭に回るため、縦に積む */
+  .onboarding-flow { flex-direction: column; gap: 4px; }
+  .flow-item { flex: none; }
+  .flow-arrow { transform: rotate(90deg); line-height: 1; }
   .onboarding > button { align-self: stretch; min-height: 46px; font-size: 15px; }
 
   .calendar-grid { gap: 3px; }
