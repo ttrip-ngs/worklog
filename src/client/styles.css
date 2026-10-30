@@ -51,7 +51,7 @@ h2 { font-size: 14px; margin: 0 0 8px; }
   padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
 }
 .header-controls { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; }
-.header-controls .spacer { flex: 1; }
+.header-controls .spacer, .app-header > .spacer { flex: 1; }
 /* デスクトップでは header-controls に直接並んでいたのと同じ見た目。
    モバイルでのみ「◀ 月 ▶」を1行に固めるためにまとめている。 */
 .month-nav { display: flex; align-items: center; gap: 8px; }
@@ -154,6 +154,37 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .hint { font-size: 11px; color: var(--muted); margin: 0; }
 .empty { color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; }
 .error { color: var(--danger); background: var(--danger-weak); border: 1px solid var(--danger-border); border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+
+/* ログイン中のアカウント(帳票の報告者の既定値になる)。 */
+.user-badge {
+  display: flex; flex-direction: column; line-height: 1.25; text-align: right;
+  padding-left: 12px; border-left: 1px solid var(--border); flex: 0 0 auto;
+}
+.user-name { font-size: 12px; font-weight: 600; }
+.user-email { font-size: 10px; color: var(--muted); }
+
+/* 委託件名が1つも無いときの案内。 */
+.onboarding {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 22px 24px; max-width: 720px; display: flex; flex-direction: column; gap: 16px;
+}
+.onboarding-lead { margin: 0; line-height: 1.7; }
+.onboarding-status {
+  margin: 0; line-height: 1.7; background: var(--accent-weak);
+  border-radius: 8px; padding: 10px 12px;
+}
+.onboarding-flow { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
+.flow-item {
+  display: flex; flex-direction: column; gap: 2px; flex: 1 1 150px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-weight: 600;
+}
+.flow-item em { font-style: normal; font-weight: 400; font-size: 11px; color: var(--muted); }
+.flow-arrow { align-self: center; color: var(--muted); }
+.onboarding-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 12px; }
+.onboarding-steps li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+.step-title { display: block; font-weight: 600; }
+.step-desc { display: block; font-size: 12px; color: var(--muted); line-height: 1.7; }
+.onboarding > button { align-self: flex-start; padding: 7px 16px; }
 
 .calendar, .report-meta {
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px;
@@ -285,8 +316,15 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
   }
   h1 { font-size: 16px; }
 
-  /* ヘッダは「委託件名」「月移動」「管理」の3段。片手でも押せる高さにする */
-  .app-header { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px; }
+  /* ヘッダは「タイトル+ログイン中のアカウント」の下に「委託件名」「月移動」「管理」の3段。
+     片手でも押せる高さにする */
+  .app-header { gap: 10px; margin-bottom: 12px; }
+  .app-header > .spacer { display: none; }
+  .user-badge { margin-left: auto; }
+  /* 空状態の案内画面では header-controls が無く、テーマ選択がタイトルの行に並ぶ */
+  .app-header > .theme-select { order: 0; margin-left: auto; }
+  .app-header > .theme-select + .user-badge { margin-left: 0; }
+  .header-controls { order: 1; flex: 1 1 100%; }
   .header-controls { gap: 8px; }
   .header-controls .spacer { display: none; }
   .contract-select { order: 1; flex: 1 1 100%; max-width: none; min-height: 44px; }
@@ -341,6 +379,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
   .only-desktop { display: none; }
 
   .empty { padding: 20px 14px; }
+
+  .onboarding { padding: 16px 14px; gap: 14px; }
+  /* 3つを横に並べると幅が足りず矢印だけが行頭に回るため、縦に積む */
+  .onboarding-flow { flex-direction: column; gap: 4px; }
+  .flow-item { flex: none; }
+  .flow-arrow { transform: rotate(90deg); line-height: 1; }
+  .onboarding > button { align-self: stretch; min-height: 46px; font-size: 15px; }
 
   .calendar-grid { gap: 3px; }
   .calendar-cell { aspect-ratio: auto; min-height: 46px; }
