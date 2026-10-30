@@ -23,6 +23,16 @@ function reloadForLogin(): void {
   location.reload();
 }
 
+/** 呼び出し側で状態コードを見分けられるようにする(締め済みの 409 など)。 */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
@@ -30,12 +40,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (res.status === 401) {
     reloadForLogin();
-    throw new Error("認証の有効期限が切れました。ページを再読み込みしてください。");
+    throw new ApiError("認証の有効期限が切れました。ページを再読み込みしてください。", 401);
   }
   sessionStorage.removeItem(REAUTH_KEY);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `通信に失敗しました (${res.status})`);
+    throw new ApiError(body.error ?? `通信に失敗しました (${res.status})`, res.status);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
@@ -78,5 +88,10 @@ export const api = {
   deleteEntry: (id: number) => req<void>(`/entries/${id}`, { method: "DELETE" }),
   saveMeta: (contractId: number, month: string, meta: { submitted_on: string | null; special_notes: string }) =>
     req<ReportMeta>(`/contracts/${contractId}/months/${month}/meta`, { method: "PUT", body: JSON.stringify(meta) }),
+  setMonthLocked: (contractId: number, month: string, locked: boolean) =>
+    req<ReportMeta>(`/contracts/${contractId}/months/${month}/lock`, {
+      method: "POST",
+      body: JSON.stringify({ locked }),
+    }),
   reportUrl: (contractId: number, month: string) => `/api/contracts/${contractId}/months/${month}/report.xlsx`,
 };

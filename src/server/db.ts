@@ -224,14 +224,90 @@ export async function deleteEntry(db: D1Database, id: number): Promise<boolean> 
 
 // ---- 帳票ヘッダ ----
 
+const META_COLS = "contract_id, month, submitted_on, special_notes, locked_at, locked_by";
+
+/** 行が無い月は「未締めで空のヘッダ」として扱う。 */
+function emptyMeta(contractId: number, month: string): ReportMeta {
+  return {
+    contract_id: contractId,
+    month,
+    submitted_on: null,
+    special_notes: "",
+    locked_at: null,
+    locked_by: "",
+  };
+}
+
 export async function getMeta(db: D1Database, contractId: number, month: string): Promise<ReportMeta> {
   const row = await db
     .prepare(
-      "SELECT contract_id, month, submitted_on, special_notes FROM report_meta WHERE contract_id = ? AND month = ?",
+      `SELECT ${META_COLS} FROM report_meta WHERE contract_id = ? AND month = ?`,
     )
     .bind(contractId, month)
     .first<ReportMeta>();
-  return row ?? { contract_id: contractId, month, submitted_on: null, special_notes: "" };
+  return row ?? emptyMeta(contractId, month);
+}
+
+/** 締め済みかどうかだけを見る軽いチェック(更新系の入口で使う)。 */
+export async function isMonthLocked(
+  db: D1Database,
+  contractId: number,
+  month: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT locked_at FROM report_meta WHERE contract_id = ? AND month = ?")
+    .bind(contractId, month)
+    .first<{ locked_at: string | null }>();
+  return row?.locked_at != null;
+}
+
+/**
+ * 月を締める。提出日が未設定ならこの時点の日付で確定させる。
+ * 出力時の当日を使うままだと、締めたあとでもダウンロードするたびに帳票の提出日が
+ * 変わってしまうため。special_notes は触らない。
+ *
+ * 既に締め済みの月に対しては何も変えない。二重クリックや再送で「最初に締めた日時・人」が
+ * 後日の値に置き換わると、いつ提出したかの証跡が失われるため。
+ */
+export async function lockMonth(
+  db: D1Database,
+  contractId: number,
+  month: string,
+  lockedBy: string,
+  fallbackSubmittedOn: string,
+): Promise<ReportMeta> {
+  const row = await db
+    .prepare(
+      `INSERT INTO report_meta (contract_id, month, submitted_on, special_notes, locked_at, locked_by)
+       VALUES (?, ?, ?, '', datetime('now'), ?)
+       ON CONFLICT (contract_id, month) DO UPDATE SET
+         submitted_on = COALESCE(report_meta.submitted_on, excluded.submitted_on),
+         locked_at = COALESCE(report_meta.locked_at, excluded.locked_at),
+         locked_by = CASE WHEN report_meta.locked_at IS NULL THEN excluded.locked_by ELSE report_meta.locked_by END,
+         updated_at = datetime('now')
+       RETURNING ${META_COLS}`,
+    )
+    .bind(contractId, month, fallbackSubmittedOn, lockedBy)
+    .first<ReportMeta>();
+  return row!;
+}
+
+/** 締めを解除する。提出日・特記事項はそのまま残す。 */
+export async function unlockMonth(
+  db: D1Database,
+  contractId: number,
+  month: string,
+): Promise<ReportMeta> {
+  const row = await db
+    .prepare(
+      `UPDATE report_meta SET locked_at = NULL, locked_by = '', updated_at = datetime('now')
+       WHERE contract_id = ? AND month = ?
+       RETURNING ${META_COLS}`,
+    )
+    .bind(contractId, month)
+    .first<ReportMeta>();
+  // 行が無い = そもそも未締め。冪等に扱う。
+  return row ?? emptyMeta(contractId, month);
 }
 
 export async function upsertMeta(
@@ -249,7 +325,7 @@ export async function upsertMeta(
          submitted_on = excluded.submitted_on,
          special_notes = excluded.special_notes,
          updated_at = datetime('now')
-       RETURNING contract_id, month, submitted_on, special_notes`,
+       RETURNING ${META_COLS}`,
     )
     .bind(contractId, month, submittedOn, specialNotes)
     .first<ReportMeta>();

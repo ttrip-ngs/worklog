@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ClientWithContracts, Entry, MonthResponse, SessionUser } from "../shared/types";
 import { formatDuration, shiftMonth, sumDuration } from "../shared/time";
-import { api, type ClientInput, type ContractInput, type EntryPayload } from "./api";
+import { ApiError, api, type ClientInput, type ContractInput, type EntryPayload } from "./api";
 import { EntryTable } from "./components/EntryTable";
 import { QuickAdd } from "./components/QuickAdd";
 import { MonthCalendar } from "./components/MonthCalendar";
 import { ManagePanel, type ManageEditing } from "./components/ManagePanel";
+import { MonthLock } from "./components/MonthLock";
 
 const LAST_CONTRACT_KEY = "worklog.lastContractId";
 const THEME_KEY = "worklog.theme";
@@ -50,6 +51,9 @@ export default function App() {
   const [inputDate, setInputDate] = useState(`${month}-01`);
   const [savedAt, setSavedAt] = useState("");
   const quickAddRef = useRef<HTMLDivElement>(null);
+  // 帳票ヘッダの保存(onBlur)は、締めるボタンのクリックより先に走る。締める前にこれを
+  // 待たないと、保存が締めたあとに届いて 409 になり、入力した特記事項が消える。
+  const pendingMetaRef = useRef<Promise<unknown> | null>(null);
 
   /**
    * テーマの反映。system のときは data-theme を外して OS 追従に戻す。
@@ -175,23 +179,39 @@ export default function App() {
         await refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "処理に失敗しました");
+        // 409 = 別の画面で締められていた。画面はまだ編集できる見た目のままなので、
+        // 締め済みの表示に追従させる(保存時刻は動かしたくないので refresh は使わない)。
+        if (e instanceof ApiError && e.status === 409 && contractId !== null) {
+          await loadMonth(contractId, month).catch(() => {});
+        }
       }
     },
-    [refresh],
+    [refresh, contractId, month, loadMonth],
   );
 
   const totalMin = useMemo(() => (data ? sumDuration(data.entries) : 0), [data]);
+  // 締め済みの月は画面からも編集手段を消す(サーバ側でも 409 で拒否している)
+  const locked = data?.meta.locked_at != null;
   const reportHref = contractId !== null ? api.reportUrl(contractId, month) : "#";
   const lastEntry: Entry | undefined = data?.entries[data.entries.length - 1];
 
-  const saveMeta = async () => {
+  const setLocked = async (next: boolean) => {
     if (contractId === null) return;
-    await run(() =>
+    await pendingMetaRef.current;
+    pendingMetaRef.current = null;
+    await run(() => api.setMonthLocked(contractId, month, next));
+  };
+
+  const saveMeta = () => {
+    if (contractId === null) return;
+    const done = run(() =>
       api.saveMeta(contractId, month, {
         submitted_on: submittedOn || null,
         special_notes: specialNotes,
       }),
     );
+    pendingMetaRef.current = done;
+    return done;
   };
 
   const managePanel = managing && (
@@ -440,6 +460,12 @@ export default function App() {
           <span className="summary-label">委託件名</span>
           <strong>{data?.contract.project_name ?? "-"}</strong>
         </div>
+        {locked && (
+          <div className="summary-item is-lock">
+            <span className="summary-label">状態</span>
+            <strong className="badge is-locked">締め済み</strong>
+          </div>
+        )}
         <div className="summary-item is-count">
           <span className="summary-label">明細件数</span>
           <strong>{data?.entries.length ?? 0} 件</strong>
@@ -459,6 +485,7 @@ export default function App() {
           <EntryTable
             month={month}
             entries={data?.entries ?? []}
+            locked={locked}
             onUpdate={(id, payload) => void run(() => api.updateEntry(id, payload))}
             onDelete={(id) => void run(() => api.deleteEntry(id))}
             onDuplicate={(e) =>
@@ -474,7 +501,14 @@ export default function App() {
             }
           />
 
-          {contractId !== null && data && (
+          {locked && (
+            <p className="hint locked-note">
+              この月は締め済みのため、明細の追加・変更はできません。修正が必要な場合は
+              右の「締めを解除」から解除してください。
+            </p>
+          )}
+
+          {contractId !== null && data && !locked && (
             <QuickAdd
               ref={quickAddRef}
               month={month}
@@ -506,21 +540,34 @@ export default function App() {
               <input
                 type="date"
                 value={submittedOn}
+                disabled={locked}
                 onChange={(e) => setSubmittedOn(e.target.value)}
                 onBlur={() => void saveMeta()}
               />
             </label>
-            <p className="hint">未設定なら出力時の当日が入ります。</p>
+            <p className="hint">
+              {locked ? "締めた時点の日付で確定しています。" : "未設定なら出力時の当日が入ります。"}
+            </p>
             <label>
               特記事項
               <textarea
                 rows={4}
                 value={specialNotes}
+                disabled={locked}
                 onChange={(e) => setSpecialNotes(e.target.value)}
                 onBlur={() => void saveMeta()}
               />
             </label>
-            {savedAt && <p className="hint">最終保存 {savedAt}</p>}
+            {savedAt && !locked && <p className="hint">最終保存 {savedAt}</p>}
+            {/* key で月・委託件名ごとに作り直し、解除の確認状態を持ち越さないようにする */}
+            {data && (
+              <MonthLock
+                key={`${contractId}-${month}`}
+                month={month}
+                meta={data.meta}
+                onChange={(v) => void setLocked(v)}
+              />
+            )}
             {/* モバイルではサマリ側を隠し、こちらを出す(styles.css) */}
             <a className="button primary meta-report" href={reportHref} download>
               Excel帳票をダウンロード
