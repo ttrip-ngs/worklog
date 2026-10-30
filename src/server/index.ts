@@ -128,6 +128,14 @@ async function requireWritableContract(dbi: D1Database, id: number) {
   return contract;
 }
 
+/** 明細は id 直指定で来るため、属する委託件名を引いて同じ archived 判定を適用する。 */
+async function requireWritableEntry(dbi: D1Database, id: number) {
+  const entry = await db.getEntry(dbi, id);
+  if (!entry) throw new NotFound("明細が見つかりません");
+  await requireWritableContract(dbi, entry.contract_id);
+  return entry;
+}
+
 const api = new Hono<AppBindings>();
 api.use("*", requireUser);
 
@@ -221,6 +229,7 @@ api.post("/contracts/:id/entries", async (c) => {
 
 api.put("/entries/:id", async (c) => {
   const id = parseId(c.req.param("id"));
+  await requireWritableEntry(c.env.DB, id);
   const input = parseEntryInput(await readJson(c));
   const updated = await db.updateEntry(c.env.DB, id, input);
   if (!updated) throw new NotFound("明細が見つかりません");
@@ -228,7 +237,9 @@ api.put("/entries/:id", async (c) => {
 });
 
 api.delete("/entries/:id", async (c) => {
-  const ok = await db.deleteEntry(c.env.DB, parseId(c.req.param("id")));
+  const id = parseId(c.req.param("id"));
+  await requireWritableEntry(c.env.DB, id);
+  const ok = await db.deleteEntry(c.env.DB, id);
   if (!ok) throw new NotFound("明細が見つかりません");
   return c.body(null, 204);
 });
