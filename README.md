@@ -14,7 +14,7 @@
 | API | Hono (Cloudflare Workers) | `src/server/` |
 | DB | Cloudflare D1 (SQLite) | ローカルは miniflare の D1 を使用 |
 | 帳票生成 | 自前 (fflate + OOXML 生成) | 元 Excel の `styles.xml` / `theme1.xml` を流用 |
-| 認証 | 未実装(ローカルは擬似ログイン) | 本番は Google Workspace OAuth を想定 |
+| 認証 | Cloudflare Access (Zero Trust) | Worker 側は JWT を検証。ローカルは擬似ログイン |
 
 Cloudflare Workers + D1 のみで動くため、無料枠の範囲でホスティングできる。
 
@@ -28,8 +28,12 @@ npm run db:seed    # 架空のサンプルデータ (2026-07) を投入
 npm run dev        # http://localhost:5173
 ```
 
-`.dev.vars` の `DEV_AUTH_EMAIL` が未設定だと API は 401 を返す。認証が未実装のため、
-この値は絶対に `wrangler.jsonc` の `vars` に書かないこと(deploy でそのまま本番に載る)。
+`.dev.vars` の `DEV_AUTH_EMAIL` が未設定だと API は 401 を返す。この値は絶対に
+`wrangler.jsonc` の `vars` に書かないこと(deploy でそのまま本番に載る)。
+
+`.dev.vars.example` には `ACCESS_TEAM_DOMAIN=` / `ACCESS_AUD=` の空指定が入っている。
+`wrangler.jsonc` の本番 Access 設定を打ち消して擬似ログインを有効にするためのもので、
+消すとローカルでも 401 になる。
 
 `npm run db:reset` でスキーマ再作成 + 初期データ再投入。
 
@@ -43,6 +47,58 @@ python3 scripts/extract-seed.py reference/<既存の日報>.xlsx "<取引先名>
 
 出力には取引先名・報告者名・稼働実績がそのまま入るため、コミットしないこと。
 
+## Cloudflare へのデプロイ
+
+認証は Cloudflare Access (Zero Trust) に任せ、Worker 側は Access が付与する JWT を検証する。
+詳細は [docs/design.md](docs/design.md) の「認証」を参照。
+
+### 1. ログインと D1 の作成
+
+```bash
+npx wrangler login
+npx wrangler d1 create worklog-db      # 出力された database_id を控える
+```
+
+### 2. Access アプリケーションを作る
+
+Zero Trust ダッシュボード > Access > Applications で、公開する独自ドメインのホスト名に対する
+Self-hosted アプリケーションを作成し、ポリシーを自分のメールアドレスに絞る。作成後の
+Overview に表示される **Audience (AUD) タグ** を控える。チームドメイン
+(`<team>.cloudflareaccess.com`) も控える。
+
+### 3. wrangler.jsonc の TODO を差し替える
+
+| 項目 | 入れる値 |
+| --- | --- |
+| `routes[0].pattern` | 公開する独自ドメインのホスト名 |
+| `vars.ACCESS_TEAM_DOMAIN` | `<team>.cloudflareaccess.com` |
+| `vars.ACCESS_AUD` | Access アプリの Audience タグ |
+| `vars.ALLOWED_EMAILS` | (任意) 許可するメール。カンマ区切り |
+| `d1_databases[0].database_id` | 手順1で控えた ID |
+
+`database_id` を変えるとローカル D1 も別ファイルに切り替わるため、`npm run db:reset` で
+作り直す。
+
+### 4. 本番 D1 にスキーマを流してデプロイ
+
+```bash
+npm run db:init:remote   # 破壊的: DROP TABLE を含む。初回のみ実行すること
+npm run deploy
+```
+
+`db/seed.sql` は架空の動作確認用データなので本番には投入しない。
+
+### 5. デプロイ後の確認
+
+```bash
+# 未認証のリクエストが弾かれること (Access のログイン画面へリダイレクト、または 401)
+curl -s -o /dev/null -w "%{http_code}\n" https://<ホスト名>/api/me
+
+# ブラウザでログインし、帳票が xlsx としてダウンロードされること
+# (HTML が返る場合は wrangler.jsonc の run_worker_first を確認)
+```
+
+
 ## 主なコマンド
 
 | コマンド | 内容 |
@@ -51,6 +107,8 @@ python3 scripts/extract-seed.py reference/<既存の日報>.xlsx "<取引先名>
 | `npm run build` | 本番ビルド |
 | `npm run typecheck` | クライアント / Worker 双方の型チェック |
 | `npm run db:reset` | ローカル D1 の初期化 |
+| `npm run deploy` | ビルドして Cloudflare へデプロイ |
+| `npm run db:init:remote` | 本番 D1 にスキーマを流す(破壊的) |
 
 ## 帳票の検証
 

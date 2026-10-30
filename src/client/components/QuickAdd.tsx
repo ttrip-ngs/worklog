@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Entry, Suggestions } from "../../shared/types";
 import { formatMin, parseTimeInput, formatMinPadded, weekdayOf, daysOfMonth } from "../../shared/time";
 import type { EntryPayload } from "../api";
+import { isEnterKey } from "../ime";
 
 function lastDayOfMonth(month: string): string {
   const days = daysOfMonth(month);
@@ -9,6 +10,7 @@ function lastDayOfMonth(month: string): string {
 }
 
 type Props = {
+  ref?: React.Ref<HTMLDivElement>;
   month: string;
   date: string;
   onDateChange: (d: string) => void;
@@ -27,6 +29,7 @@ type Props = {
  * を備える。
  */
 export function QuickAdd({
+  ref,
   month,
   date,
   onDateChange,
@@ -83,7 +86,7 @@ export function QuickAdd({
   };
 
   const onEnter = (ev: React.KeyboardEvent) => {
-    if (ev.key === "Enter") void submit();
+    if (isEnterKey(ev)) void submit();
   };
 
   /** blur 時に "9" -> "09:00" のように表示を正規化する。 */
@@ -93,7 +96,8 @@ export function QuickAdd({
   };
 
   return (
-    <div className="quick-add">
+    <div className="quick-add" ref={ref}>
+      <h2 className="quick-add-title">実績を追加</h2>
       <div className="quick-add-row">
         <label>
           年月日
@@ -108,7 +112,7 @@ export function QuickAdd({
             <span className="weekday">{weekdayOf(date)}</span>
           </span>
         </label>
-        <label>
+        <label className="time-col">
           開始
           <input
             ref={startRef}
@@ -119,7 +123,7 @@ export function QuickAdd({
             inputMode="numeric"
           />
         </label>
-        <label>
+        <label className="time-col">
           終了
           <input
             value={end}
@@ -164,7 +168,11 @@ export function QuickAdd({
             直近の明細をコピー
           </button>
         )}
-        <span className="hint">時刻は「9」「930」「24:00」などで入力できます。Enter で追加。</span>
+        <span className="hint">
+          時刻は「9」「930」「24:00」などで入力できます。
+          {/* テンキーには Enter が無いのでモバイルでは出さない */}
+          <span className="only-desktop">Enter で追加。</span>
+        </span>
       </div>
 
       {error && <p className="error">{error}</p>}
