@@ -8,6 +8,22 @@ import { MonthCalendar } from "./components/MonthCalendar";
 import { ManagePanel } from "./components/ManagePanel";
 
 const LAST_CONTRACT_KEY = "worklog.lastContractId";
+const THEME_KEY = "worklog.theme";
+
+type Theme = "system" | "light" | "dark";
+
+// index.html の theme-color と揃えること(--bg のライト/ダーク値)
+const THEME_BG: Record<"light" | "dark", string> = { light: "#f5f6f8", dark: "#14171c" };
+
+function storedTheme(): Theme {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    if (t === "light" || t === "dark") return t;
+  } catch {
+    // プライベートブラウズ等で localStorage が使えない場合は OS 追従のまま
+  }
+  return "system";
+}
 
 function currentMonthJst(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -27,9 +43,35 @@ export default function App() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [managing, setManaging] = useState(false);
+  const [theme, setTheme] = useState<Theme>(storedTheme);
   const [inputDate, setInputDate] = useState(`${month}-01`);
   const [savedAt, setSavedAt] = useState("");
   const quickAddRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * テーマの反映。system のときは data-theme を外して OS 追従に戻す。
+   *
+   * theme-color の meta は media 属性で OS 設定に紐づいているため、明示的にテーマを
+   * 選んだ場合はそのままだと Safari のツールバーだけ逆の色で残る。両方の meta を
+   * 選択中のテーマの背景色で上書きして揃える。
+   */
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "system") delete root.dataset.theme;
+    else root.dataset.theme = theme;
+
+    try {
+      if (theme === "system") localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // 保存できなくても表示の切り替え自体は効く
+    }
+
+    document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => {
+      const own = m.media.includes("dark") ? "dark" : "light";
+      m.content = THEME_BG[theme === "system" ? own : theme];
+    });
+  }, [theme]);
 
   /**
    * カレンダーで日を選んだときの遷移。モバイルでは入力欄が画面上部・カレンダーが
@@ -235,6 +277,16 @@ export default function App() {
               ▶
             </button>
           </div>
+          <select
+            className="theme-select"
+            aria-label="表示テーマ"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value as Theme)}
+          >
+            <option value="system">システム</option>
+            <option value="light">ライト</option>
+            <option value="dark">ダーク</option>
+          </select>
         </div>
       </header>
 
