@@ -1,15 +1,33 @@
 :root {
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --border: #d8dce3;
-  --text: #1c2128;
-  --muted: #666e7a;
+  /* light-dark(ライト, ダーク)。どちらが採用されるかは color-scheme が決める。
+     既定の `light dark` は OS 設定に追従し、下の [data-theme] が付いたときだけ固定される。
+     色トークンとネイティブ描画(日付/月ピッカー・select のドロップダウン・スクロールバー)が
+     同じ指定で一度に切り替わるので、テーマごとのブロックを二重に持つ必要がない。 */
+  color-scheme: light dark;
+
+  --bg: light-dark(#f5f6f8, #14171c);
+  --surface: light-dark(#ffffff, #1d2229);
+  --surface-alt: light-dark(#eef1f5, #262c35);
+  --border: light-dark(#d8dce3, #343b46);
+  --text: light-dark(#1c2128, #e6e9ee);
+  --muted: light-dark(#666e7a, #98a1ad);
+  /* accent はテーマ共通。文字色には使わず(border / outline / .primary の背景のみ)、
+     .primary は白文字なので、ダークで淡くするとコントラストが落ちる。 */
   --accent: #1f6feb;
-  --accent-weak: #e8f0fe;
-  --danger: #c33;
-  --weekend: #fbf3f3;
-  color-scheme: light;
+  --accent-weak: light-dark(#e8f0fe, #1c2d4a);
+  --accent-hover: light-dark(#1a5fd0, #3b7ff0);
+  --accent-border: light-dark(#c3d6f7, #2f4a7a);
+  --danger: light-dark(#c33, #f07575);
+  --danger-weak: light-dark(#fdecec, #3a2325);
+  --danger-border: light-dark(#e5b4b4, #6b3538);
+  --weekend: light-dark(#fbf3f3, #262024);
+  --overlay: light-dark(rgba(20, 24, 30, .45), rgba(0, 0, 0, .6));
 }
+
+/* ヘッダの表示テーマ選択で「ライト」「ダーク」を選んだとき。
+   未選択(システム)なら data-theme が付かず、上の `light dark` のまま OS に追従する。 */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 
@@ -44,19 +62,19 @@ button, .button {
   display: inline-block; line-height: 1.5;
 }
 button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.danger { color: var(--danger); border-color: #e5b4b4; }
+button.danger { color: var(--danger); border-color: var(--danger-border); }
 button:disabled { opacity: .5; cursor: default; }
 
 /* タッチ端末では :hover がタップ後に貼り付くため、ホバー可能な環境に限定する */
 @media (hover: hover) {
-  button:hover, .button:hover { background: #eef1f5; }
-  button.primary:hover, .button.primary:hover { background: #1a5fd0; }
+  button:hover, .button:hover { background: var(--surface-alt); }
+  button.primary:hover, .button.primary:hover { background: var(--accent-hover); }
   .entry-table input:hover { border-color: var(--border); }
 }
 /* ホバーで押下前のフィードバックが得られないタッチ環境にだけ :active を出す */
 @media (hover: none) {
-  button:active, .button:active { background: #e6eaf0; }
-  button.primary:active, .button.primary:active { background: #1a5fd0; }
+  button:active, .button:active { background: var(--surface-alt); }
+  button.primary:active, .button.primary:active { background: var(--accent-hover); }
 }
 
 input, select, textarea {
@@ -92,7 +110,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 /* padding-left は見出しの文字位置をセルの値に揃えるためのもの。行内の入力欄は
    border(1px)+padding(7px) の分だけ内側から文字が始まるので、左寄せの見出しをその分ずらす。 */
 .entry-table th {
-  background: #eef1f5; font-size: 12px; font-weight: 600; color: var(--muted); padding-left: 14px;
+  background: var(--surface-alt); font-size: 12px; font-weight: 600; color: var(--muted); padding-left: 14px;
 }
 .entry-table th.col-time { padding-left: 6px; text-align: center; }
 .entry-table th.col-dur { padding-left: 6px; padding-right: 12px; text-align: right; }
@@ -110,7 +128,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .row-actions button { padding: 2px 7px; font-size: 12px; }
 
 .time-field { text-align: center; font-variant-numeric: tabular-nums; }
-.time-field.is-invalid { border-color: var(--danger) !important; background: #fdecec !important; }
+.time-field.is-invalid { border-color: var(--danger) !important; background: var(--danger-weak) !important; }
 
 .quick-add {
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
@@ -130,12 +148,12 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .helper-label { font-size: 11px; color: var(--muted); }
 .chip {
   font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--accent-weak);
-  border-color: #c3d6f7; font-variant-numeric: tabular-nums;
+  border-color: var(--accent-border); font-variant-numeric: tabular-nums;
 }
 .chip em { font-style: normal; color: var(--muted); margin-left: 5px; font-size: 10px; }
 .hint { font-size: 11px; color: var(--muted); margin: 0; }
 .empty { color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; }
-.error { color: var(--danger); background: #fdecec; border: 1px solid #f0c4c4; border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+.error { color: var(--danger); background: var(--danger-weak); border: 1px solid var(--danger-border); border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
 
 /* ログイン中のアカウント(帳票の報告者の既定値になる)。 */
 .user-badge {
@@ -179,7 +197,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 }
 .calendar-cell.is-pad { border: none; background: transparent; cursor: default; }
 .calendar-cell.is-weekend { background: var(--weekend); }
-.calendar-cell.has-entry { background: var(--accent-weak); border-color: #c3d6f7; }
+.calendar-cell.has-entry { background: var(--accent-weak); border-color: var(--accent-border); }
 .calendar-cell.is-selected { outline: 2px solid var(--accent); }
 .calendar-cell .day { font-weight: 600; }
 .calendar-cell .amount { font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 11px; }
@@ -188,7 +206,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .report-meta input, .report-meta textarea { width: 100%; color: var(--text); }
 
 .overlay {
-  position: fixed; inset: 0; background: rgba(20, 24, 30, .45);
+  position: fixed; inset: 0; background: var(--overlay);
   display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 10;
 }
 .panel {
@@ -303,6 +321,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
   .app-header { gap: 10px; margin-bottom: 12px; }
   .app-header > .spacer { display: none; }
   .user-badge { margin-left: auto; }
+  /* 空状態の案内画面では header-controls が無く、テーマ選択がタイトルの行に並ぶ */
+  .app-header > .theme-select { order: 0; margin-left: auto; }
+  .app-header > .theme-select + .user-badge { margin-left: 0; }
   .header-controls { order: 1; flex: 1 1 100%; }
   .header-controls { gap: 8px; }
   .header-controls .spacer { display: none; }
@@ -310,7 +331,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
   .month-nav { order: 2; flex: 1 1 100%; }
   .month-nav .month-field { flex: 1; width: auto; min-height: 44px; text-align: center; }
   .month-nav button { flex: 0 0 60px; min-height: 44px; }
-  .manage-button { order: 3; flex: 1 1 100%; min-height: 40px; }
+  /* 「管理」と表示テーマを1行に収め、ヘッダを3段のまま保つ */
+  .manage-button { order: 3; flex: 1 1 auto; min-height: 40px; }
+  .theme-select { order: 4; flex: 0 0 auto; min-height: 40px; }
 
   /* サマリは「どの取引先か」と「今月の合計」だけの1行に畳む。
      委託件名はセレクトに、明細件数は一覧の見出しに出ているので省く。
@@ -333,7 +356,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 
   /* 入力が主目的なので、一覧より前に出す */
   .quick-add {
-    order: -1; padding: 12px; border-color: #c3d6f7;
+    order: -1; padding: 12px; border-color: var(--accent-border);
     box-shadow: 0 1px 3px rgba(20, 24, 30, .06);
   }
   .quick-add-title { display: block; font-size: 13px; margin: 0 0 10px; }

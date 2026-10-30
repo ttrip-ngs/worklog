@@ -178,6 +178,16 @@ export async function listEntries(
   return results;
 }
 
+export async function getEntry(db: D1Database, id: number): Promise<Entry | null> {
+  return await db
+    .prepare(
+      `SELECT id, contract_id, work_date, start_min, end_min, content, location
+       FROM entries WHERE id = ?`,
+    )
+    .bind(id)
+    .first<Entry>();
+}
+
 /** 複数明細をまとめて登録する。batch は1トランザクションで実行されるため部分登録が残らない。 */
 export async function createEntries(
   db: D1Database,
