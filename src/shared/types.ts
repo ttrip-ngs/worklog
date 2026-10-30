@@ -34,6 +34,10 @@ export type ReportMeta = {
   month: string; // YYYY-MM
   submitted_on: string | null;
   special_notes: string;
+  /** 締めた日時 ("YYYY-MM-DD HH:MM:SS" / UTC)。null なら未締め。 */
+  locked_at: string | null;
+  /** 締めた人のメールアドレス。未締めなら空文字。 */
+  locked_by: string;
 };
 
 /** 入力補助に使う、過去実績から集計した候補。 */

@@ -11,7 +11,9 @@
     "db:init": "wrangler d1 execute worklog-db --local --file=./db/schema.sql",
     "db:seed": "wrangler d1 execute worklog-db --local --file=./db/seed.sql",
     "db:reset": "npm run db:init && npm run db:seed",
-    "db:init:remote": "wrangler d1 execute worklog-db --remote --file=./db/schema.sql"
+    "db:init:remote": "wrangler d1 execute worklog-db --remote --file=./db/schema.sql",
+    "db:migrate": "wrangler d1 execute worklog-db --local --file=./db/migrations/0001_report_meta_lock.sql",
+    "db:migrate:remote": "wrangler d1 execute worklog-db --remote --file=./db/migrations/0001_report_meta_lock.sql"
   },
   "dependencies": {
     "fflate": "^0.8.2",

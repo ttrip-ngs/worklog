@@ -108,6 +108,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .entry-table .weekday { font-size: 11px; color: var(--muted); margin-left: 4px; }
 .row-actions { display: flex; gap: 4px; white-space: nowrap; }
 .row-actions button { padding: 2px 7px; font-size: 12px; }
+/* 締め済みの行。入力欄の見た目に揃えるため、行内の値と同じ位置から文字を始める */
+.entry-table td.locked-value, .entry-table .locked-value { padding-left: 8px; }
+.entry-table td.locked-value { font-variant-numeric: tabular-nums; }
 
 .time-field { text-align: center; font-variant-numeric: tabular-nums; }
 .time-field.is-invalid { border-color: var(--danger) !important; background: #fdecec !important; }
@@ -187,6 +190,18 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
 .panel label.show-archived { flex-direction: row; align-items: center; gap: 6px; font-size: 12px; }
 .panel label.show-archived input { width: auto; }
 .manage-tree > li.is-archived, .manage-row.is-archived { opacity: .55; }
+.badge.is-locked {
+  margin-left: 0; align-self: flex-start; color: var(--danger);
+  border-color: #e5b4b4; background: #fdecec; font-weight: 600; font-size: 11px; padding: 1px 8px;
+}
+
+/* 月締めの操作。解除は2段確認にしている(MonthLock.tsx) */
+.month-lock { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.month-lock .lock-state { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.month-lock .lock-actions { display: flex; gap: 6px; }
+.locked-note { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface); }
+.entry-item.is-locked .entry-head { cursor: default; }
+
 .badge { font-size: 10px; font-weight: 400; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; margin-left: 6px; }
 
 .edit-form { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--accent-weak); }
@@ -284,7 +299,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-weak
     flex-wrap: nowrap; justify-content: space-between; gap: 12px;
     padding: 10px 12px; margin-bottom: 12px;
   }
-  .summary-item.is-contract, .summary-item.is-count, .summary-report { display: none; }
+  /* 締め済みの表示は明細の上の .locked-note にも出るため、1行のサマリからは省く */
+  .summary-item.is-contract, .summary-item.is-count, .summary-item.is-lock, .summary-report { display: none; }
   .summary-item.is-client { min-width: 0; }
   .summary-item.is-client strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .summary-item.is-total { align-items: flex-end; text-align: right; flex: 0 0 auto; }

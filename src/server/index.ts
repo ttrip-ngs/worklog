@@ -13,6 +13,8 @@ const MAX_BULK_ENTRIES = 100;
 
 class BadRequest extends Error {}
 class NotFound extends Error {}
+/** 締め済みの月への更新。クライアントは 409 を「締め済み」として扱う。 */
+class Locked extends Error {}
 
 /** 形式に加えて実在する日付か(2026-02-31 のような繰り上がりを弾く)を検証する。 */
 function isValidDate(s: string): boolean {
@@ -128,6 +130,24 @@ async function requireWritableContract(dbi: D1Database, id: number) {
   return contract;
 }
 
+/** 明細は id 直指定で来るため、属する委託件名を引いて同じ archived 判定を適用する。 */
+async function requireWritableEntry(dbi: D1Database, id: number) {
+  const entry = await db.getEntry(dbi, id);
+  if (!entry) throw new NotFound("明細が見つかりません");
+  await requireWritableContract(dbi, entry.contract_id);
+  return entry;
+}
+
+/**
+ * 締め済みの月は更新を拒否する。提出済みの帳票が知らないうちに変わらないようにするための
+ * 最終防衛線で、画面側の入力欄の抑止だけに頼らない。
+ */
+async function requireUnlockedMonth(dbi: D1Database, contractId: number, month: string) {
+  if (await db.isMonthLocked(dbi, contractId, month)) {
+    throw new Locked(`${month} は締め済みです。変更するには締めを解除してください。`);
+  }
+}
+
 const api = new Hono<AppBindings>();
 api.use("*", requireUser);
 
@@ -172,21 +192,24 @@ api.put("/contracts/:id", async (c) => {
   return c.json(updated);
 });
 
-/** 非表示 / 再表示の切り替え。body の archived を省略した場合は非表示にする。 */
-function parseArchivedFlag(body: unknown): boolean {
-  const v = (body as Record<string, unknown> | null)?.archived;
+/**
+ * 切り替え系 API のフラグ。省略した場合は true(非表示にする / 締める)として扱う。
+ * 省略や壊れた body で「解除」側に倒れないよう、安全側に寄せている。
+ */
+function parseToggleFlag(body: unknown, key: string): boolean {
+  const v = (body as Record<string, unknown> | null)?.[key];
   return v === undefined ? true : Boolean(v);
 }
 
 api.post("/contracts/:id/archive", async (c) => {
-  const archived = parseArchivedFlag(await readJson(c).catch(() => null));
+  const archived = parseToggleFlag(await readJson(c).catch(() => null), "archived");
   const ok = await db.setContractArchived(c.env.DB, parseId(c.req.param("id")), archived);
   if (!ok) throw new NotFound("委託件名が見つかりません");
   return c.body(null, 204);
 });
 
 api.post("/clients/:id/archive", async (c) => {
-  const archived = parseArchivedFlag(await readJson(c).catch(() => null));
+  const archived = parseToggleFlag(await readJson(c).catch(() => null), "archived");
   const ok = await db.setClientArchived(c.env.DB, parseId(c.req.param("id")), archived);
   if (!ok) throw new NotFound("取引先が見つかりません");
   return c.body(null, 204);
@@ -216,19 +239,31 @@ api.post("/contracts/:id/entries", async (c) => {
   const raw = Array.isArray(body) ? body : [body];
   if (raw.length === 0) throw new BadRequest("明細がありません");
   if (raw.length > MAX_BULK_ENTRIES) throw new BadRequest(`一度に登録できるのは ${MAX_BULK_ENTRIES} 件までです`);
-  return c.json(await db.createEntries(c.env.DB, id, raw.map(parseEntryInput)), 201);
+  const inputs = raw.map(parseEntryInput);
+  // 一括登録は複数月にまたがりうるため、含まれる月をすべて確認する
+  for (const m of new Set(inputs.map((i) => i.work_date.slice(0, 7)))) {
+    await requireUnlockedMonth(c.env.DB, id, m);
+  }
+  return c.json(await db.createEntries(c.env.DB, id, inputs), 201);
 });
 
 api.put("/entries/:id", async (c) => {
   const id = parseId(c.req.param("id"));
   const input = parseEntryInput(await readJson(c));
+  const current = await requireWritableEntry(c.env.DB, id);
+  // 移動元・移動先の両方を見る。締め済みの月から出すのも、締め済みの月へ入れるのも変更にあたる。
+  await requireUnlockedMonth(c.env.DB, current.contract_id, current.work_date.slice(0, 7));
+  await requireUnlockedMonth(c.env.DB, current.contract_id, input.work_date.slice(0, 7));
   const updated = await db.updateEntry(c.env.DB, id, input);
   if (!updated) throw new NotFound("明細が見つかりません");
   return c.json(updated);
 });
 
 api.delete("/entries/:id", async (c) => {
-  const ok = await db.deleteEntry(c.env.DB, parseId(c.req.param("id")));
+  const id = parseId(c.req.param("id"));
+  const current = await requireWritableEntry(c.env.DB, id);
+  await requireUnlockedMonth(c.env.DB, current.contract_id, current.work_date.slice(0, 7));
+  const ok = await db.deleteEntry(c.env.DB, id);
   if (!ok) throw new NotFound("明細が見つかりません");
   return c.body(null, 204);
 });
@@ -237,11 +272,28 @@ api.put("/contracts/:id/months/:month/meta", async (c) => {
   const id = parseId(c.req.param("id"));
   const month = requireMonth(c.req.param("month"));
   await requireWritableContract(c.env.DB, id);
+  await requireUnlockedMonth(c.env.DB, id, month);
   const body = (await readJson(c)) as Record<string, unknown>;
   const submitted = body.submitted_on ? String(body.submitted_on) : null;
   if (submitted && !isValidDate(submitted)) throw new BadRequest("提出日が不正です");
   const notes = String(body.special_notes ?? "").slice(0, 500);
   return c.json(await db.upsertMeta(c.env.DB, id, month, submitted, notes));
+});
+
+/**
+ * 月締めの切り替え。body の locked を省略した場合は締める(安全側)。
+ * 締めると提出日が未設定でもその時点の日付で確定する。出力時の当日を使ったままだと、
+ * 提出後もダウンロードのたびに帳票の提出日が変わってしまうため。
+ */
+api.post("/contracts/:id/months/:month/lock", async (c) => {
+  const id = parseId(c.req.param("id"));
+  const month = requireMonth(c.req.param("month"));
+  await requireWritableContract(c.env.DB, id);
+  const locked = parseToggleFlag(await readJson(c).catch(() => null), "locked");
+  const meta = locked
+    ? await db.lockMonth(c.env.DB, id, month, c.get("user").email, todayJst())
+    : await db.unlockMonth(c.env.DB, id, month);
+  return c.json(meta);
 });
 
 // ---- 帳票 ----
@@ -286,6 +338,7 @@ api.get("/contracts/:id/months/:month/report.xlsx", async (c) => {
 api.onError((err, c) => {
   if (err instanceof BadRequest) return c.json({ error: err.message }, 400);
   if (err instanceof NotFound) return c.json({ error: err.message }, 404);
+  if (err instanceof Locked) return c.json({ error: err.message }, 409);
   console.error(err);
   return c.json({ error: "サーバエラーが発生しました" }, 500);
 });

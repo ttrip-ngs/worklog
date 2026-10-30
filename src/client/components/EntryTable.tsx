@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Entry } from "../../shared/types";
-import { formatDuration, formatMin, weekdayOf, isWeekend, daysOfMonth } from "../../shared/time";
+import { formatDuration, formatMin, formatMinPadded, weekdayOf, isWeekend, daysOfMonth } from "../../shared/time";
 import { TimeField } from "./TimeField";
 import { TextField } from "./TextField";
 import type { EntryPayload } from "../api";
@@ -8,6 +8,8 @@ import type { EntryPayload } from "../api";
 type Props = {
   month: string; // YYYY-MM。日付をこの月の中に制限するために使う
   entries: Entry[];
+  /** 締め済みの月。入力欄と操作ボタンを出さず、読み取り専用の表示にする。 */
+  locked?: boolean;
   onUpdate: (id: number, payload: EntryPayload) => void;
   onDelete: (id: number) => void;
   onDuplicate: (entry: Entry) => void;
@@ -70,6 +72,23 @@ function DeleteButtons({ onDelete }: { onDelete: () => void }) {
         取消
       </button>
     </>
+  );
+}
+
+/** 締め済みの月の1行。編集手段を一切出さず、値だけを見せる。 */
+function LockedRow({ entry: e }: { entry: Entry }) {
+  return (
+    <tr className={isWeekend(e.work_date) ? "is-weekend" : undefined}>
+      <td>
+        <span className="locked-value">{e.work_date}</span>
+        <span className="weekday">{weekdayOf(e.work_date)}</span>
+      </td>
+      <td className="locked-value">{formatMinPadded(e.start_min)}</td>
+      <td className="locked-value">{formatMinPadded(e.end_min)}</td>
+      <td className="num">{formatDuration(e.end_min - e.start_min)}</td>
+      <td className="locked-value">{e.content}</td>
+      <td className="locked-value">{e.location}</td>
+    </tr>
   );
 }
 
@@ -143,10 +162,32 @@ function Row({ entry: e, month, onUpdate, onDelete, onDuplicate }: RowProps) {
  * 狭い画面の1明細。既定は1件2行の読み取り表示で、タップしたときだけ編集欄を開く。
  * 月に20件前後並ぶため、全件を編集フォームのまま出すとスクロールが長くなりすぎる。
  */
-function EntryItem({ entry: e, month, onUpdate, onDelete, onDuplicate }: RowProps) {
+function EntryItem({ entry: e, month, locked, onUpdate, onDelete, onDuplicate }: RowProps) {
   const [open, setOpen] = useState(false);
   const dur = formatDuration(e.end_min - e.start_min);
   const desc = [e.content, e.location].filter((v) => v.trim() !== "").join(" ・ ");
+  const head = (
+    <>
+      <span className="entry-date">
+        {Number(e.work_date.slice(5, 7))}/{Number(e.work_date.slice(8))}
+        <span className="entry-weekday">{weekdayOf(e.work_date)}</span>
+      </span>
+      <span className="entry-span">
+        {formatMin(e.start_min)}〜{formatMin(e.end_min)}
+      </span>
+      <span className="entry-dur">{dur}</span>
+      <span className="entry-desc">{desc || "(業務内容なし)"}</span>
+    </>
+  );
+
+  // 締め済みは開いても編集できることが無いため、開閉自体を出さない
+  if (locked) {
+    return (
+      <li className={`entry-item is-locked${isWeekend(e.work_date) ? " is-weekend" : ""}`}>
+        <div className="entry-head">{head}</div>
+      </li>
+    );
+  }
 
   return (
     <li className={`entry-item${isWeekend(e.work_date) ? " is-weekend" : ""}${open ? " is-open" : ""}`}>
@@ -214,7 +255,7 @@ function EntryItem({ entry: e, month, onUpdate, onDelete, onDuplicate }: RowProp
   );
 }
 
-export function EntryTable({ month, entries, onUpdate, onDelete, onDuplicate }: Props) {
+export function EntryTable({ month, entries, locked, onUpdate, onDelete, onDuplicate }: Props) {
   const narrow = useNarrow();
 
   if (entries.length === 0) {
@@ -231,6 +272,7 @@ export function EntryTable({ month, entries, onUpdate, onDelete, onDuplicate }: 
               key={e.id}
               entry={e}
               month={month}
+              locked={locked}
               onUpdate={onUpdate}
               onDelete={onDelete}
               onDuplicate={onDuplicate}
@@ -251,20 +293,24 @@ export function EntryTable({ month, entries, onUpdate, onDelete, onDuplicate }: 
           <th className="col-dur">稼働</th>
           <th>業務内容</th>
           <th className="col-loc">備考</th>
-          <th className="col-act"></th>
+          {!locked && <th className="col-act"></th>}
         </tr>
       </thead>
       <tbody>
-        {entries.map((e) => (
-          <Row
-            key={e.id}
-            entry={e}
-            month={month}
-            onUpdate={onUpdate}
-            onDelete={onDelete}
-            onDuplicate={onDuplicate}
-          />
-        ))}
+        {entries.map((e) =>
+          locked ? (
+            <LockedRow key={e.id} entry={e} />
+          ) : (
+            <Row
+              key={e.id}
+              entry={e}
+              month={month}
+              onUpdate={onUpdate}
+              onDelete={onDelete}
+              onDuplicate={onDuplicate}
+            />
+          ),
+        )}
       </tbody>
     </table>
   );

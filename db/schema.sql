@@ -47,12 +47,14 @@ CREATE TABLE entries (
 
 CREATE INDEX idx_entries_contract_date ON entries (contract_id, work_date);
 
--- 月次帳票のヘッダ情報(提出日・特記事項)。委託件名ごとに1枚。
+-- 月次帳票のヘッダ情報(提出日・特記事項)と月締めの状態。委託件名ごとに1枚。
 CREATE TABLE report_meta (
   contract_id   INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
   month         TEXT    NOT NULL,                -- YYYY-MM
   submitted_on  TEXT,                            -- YYYY-MM-DD。未設定なら出力時の当日
   special_notes TEXT    NOT NULL DEFAULT '',     -- 特記事項(改行区切り最大3行)
+  locked_at     TEXT,                            -- 締めた日時(UTC)。NULL なら未締め
+  locked_by     TEXT    NOT NULL DEFAULT '',     -- 締めた人のメールアドレス
   updated_at    TEXT    NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (contract_id, month)
 );
