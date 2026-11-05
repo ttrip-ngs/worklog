@@ -122,7 +122,8 @@ curl -s -o /dev/null -w "%{http_code}\n" https://<ホスト名>/api/me
 | --- | --- |
 | `npm run dev` | Vite + Workers ランタイムの開発サーバ |
 | `npm run build` | 本番ビルド |
-| `npm run typecheck` | クライアント / Worker 双方の型チェック |
+| `npm run typecheck` | クライアント / Worker / テストの型チェック |
+| `npm test` | API のテスト (Workers ランタイム上の Vitest) |
 | `npm run db:reset` | ローカル D1 の初期化 |
 | `npm run db:migrate` | ローカル D1 に追加マイグレーションを適用 |
 | `npm run db:migrate:remote` | 本番 D1 に追加マイグレーションを適用 |
@@ -177,3 +178,4 @@ python3 scripts/compare-xlsx.py reference/<既存の日報>.xlsx ./tmp/out.xlsx
 ## ドキュメント
 
 - [docs/design.md](docs/design.md) — データモデル、帳票生成の仕組み、認証の実装方針
+- [docs/api.md](docs/api.md) — API のエンドポイント、認証、エラー、更新の規則
