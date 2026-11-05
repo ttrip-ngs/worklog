@@ -57,4 +57,15 @@ export type MonthResponse = {
   suggestions: Suggestions;
 };
 
+/** 月一覧の1行。明細または帳票ヘッダのある月だけが返る。 */
+export type MonthSummary = {
+  month: string; // YYYY-MM
+  entry_count: number;
+  /** 稼働時間の合計(分)。 */
+  total_min: number;
+  submitted_on: string | null;
+  locked_at: string | null;
+  locked_by: string;
+};
+
 export type SessionUser = { email: string; name: string };

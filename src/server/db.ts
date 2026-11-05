@@ -3,6 +3,7 @@ import type {
   ClientWithContracts,
   Contract,
   Entry,
+  MonthSummary,
   ReportMeta,
   Suggestions,
 } from "../shared/types";
@@ -75,6 +76,19 @@ export type ContractInput = {
   default_location: string;
   sort_order: number;
 };
+
+export async function listContracts(
+  db: D1Database,
+  clientId: number,
+  includeArchived = false,
+): Promise<Contract[]> {
+  const filter = includeArchived ? "" : "AND archived = 0";
+  const { results } = await db
+    .prepare(`SELECT * FROM contracts WHERE client_id = ? ${filter} ORDER BY sort_order, id`)
+    .bind(clientId)
+    .all<ContractRow>();
+  return results.map(toContract);
+}
 
 export async function getContract(db: D1Database, id: number): Promise<Contract | null> {
   const row = await db.prepare("SELECT * FROM contracts WHERE id = ?").bind(id).first<ContractRow>();
@@ -330,6 +344,48 @@ export async function upsertMeta(
     .bind(contractId, month, submittedOn, specialNotes)
     .first<ReportMeta>();
   return row!;
+}
+
+/**
+ * 明細または帳票ヘッダのある月を新しい順に返す。明細が無くても締めた月は一覧に残す。
+ *
+ * 集計と並べ替えは TS 側で行う。UNION サブクエリに LEFT JOIN して ORDER BY m.month DESC と
+ * 1本で書くと、SQLite 3.54 とローカルの D1 で結果が昇順になることを確認した。TS 側で並べれば
+ * 本番 D1 の SQLite のバージョンに左右されない。
+ */
+export async function listMonthSummaries(db: D1Database, contractId: number): Promise<MonthSummary[]> {
+  const [totals, metas] = await Promise.all([
+    db
+      .prepare(
+        `SELECT substr(work_date, 1, 7) AS month, COUNT(*) AS entry_count,
+                SUM(end_min - start_min) AS total_min
+         FROM entries WHERE contract_id = ? GROUP BY month`,
+      )
+      .bind(contractId)
+      .all<Pick<MonthSummary, "month" | "entry_count" | "total_min">>(),
+    db
+      .prepare("SELECT month, submitted_on, locked_at, locked_by FROM report_meta WHERE contract_id = ?")
+      .bind(contractId)
+      .all<Pick<MonthSummary, "month" | "submitted_on" | "locked_at" | "locked_by">>(),
+  ]);
+  const byMonth = new Map<string, MonthSummary>();
+  const summaryOf = (month: string): MonthSummary => {
+    const found = byMonth.get(month);
+    if (found) return found;
+    const created: MonthSummary = {
+      month,
+      entry_count: 0,
+      total_min: 0,
+      submitted_on: null,
+      locked_at: null,
+      locked_by: "",
+    };
+    byMonth.set(month, created);
+    return created;
+  };
+  for (const row of totals.results) Object.assign(summaryOf(row.month), row);
+  for (const row of metas.results) Object.assign(summaryOf(row.month), row);
+  return [...byMonth.values()].sort((a, b) => b.month.localeCompare(a.month));
 }
 
 /**
